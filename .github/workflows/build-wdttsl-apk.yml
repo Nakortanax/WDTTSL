@@ -52,7 +52,6 @@ jobs:
           tar -xzf /tmp/wdttsl-overlay-v4.tar.gz -C .wdttsl-overlay
           python3 .wdttsl-overlay/install_wdttsl_v4.py .
 
-          # Overlay safety copies are not valid Android resources.
           find app/src/main/res -type f -name '*.wdttsl.bak' -print -delete
 
           grep -F 'rootProject.name = "WDTTSL"' settings.gradle.kts
@@ -68,67 +67,51 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # Compose 1.12 exposes Modifier.weight through RowScope/ColumnScope.
-          # Importing the internal backing property is rejected by Kotlin 2.4.
           route = Path('app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt')
-          if route.exists():
-              text = route.read_text(encoding='utf-8')
-              text = text.replace('import androidx.compose.foundation.layout.weight\n', '')
-              route.write_text(text, encoding='utf-8')
+          route_text = route.read_text(encoding='utf-8')
+          route_text = route_text.replace('import androidx.compose.foundation.layout.weight\n', '')
+          route.write_text(route_text, encoding='utf-8')
 
           exceptions = Path('app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt')
           text = exceptions.read_text(encoding='utf-8')
 
-          # The overlay originally tried to return from CsqttScreen while inside
-          # the nested AppSectionCard lambda. Kotlin prohibits that return.
-          # Keep route-list UI in the card and make app-only UI conditional.
-          old_route_block = '''            if (routingSourceMode == com.csqtt.client.routing.RoutingSourceMode.ROUTE_LISTS) {
-              RouteListsSection(Modifier.fillMaxWidth().weight(1f))
-              return@CsqttScreen
-          }
-          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-          CsqttSettingRow(
-              title = stringResource(R.string.exceptions_system_apps),
-              checked = showSystemApps,
-              onCheckedChange = { enabled ->
-                  scope.launch { settingsStore.saveShowSystemApps(enabled) }
-              },
-          )'''
-          new_route_block = '''            if (routingSourceMode == com.csqtt.client.routing.RoutingSourceMode.ROUTE_LISTS) {
-              RouteListsSection(Modifier.fillMaxWidth())
-          } else {
-              HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-              CsqttSettingRow(
-                  title = stringResource(R.string.exceptions_system_apps),
-                  checked = showSystemApps,
-                  onCheckedChange = { enabled ->
-                      scope.launch { settingsStore.saveShowSystemApps(enabled) }
-                  },
-              )
-          }'''
-          if old_route_block not in text:
-              raise SystemExit('Expected route-list return block was not found')
-          text = text.replace(old_route_block, new_route_block, 1)
+          old_call = 'RouteListsSection(Modifier.fillMaxWidth().weight(1f))'
+          if old_call not in text:
+              raise SystemExit('RouteListsSection weighted call not found')
+          text = text.replace(old_call, 'RouteListsSection(Modifier.fillMaxWidth())', 1)
 
-          app_anchor = '''        Text(
-          text = stringResource(R.string.exceptions_selected_count, selectedPackages.size),'''
-          if app_anchor not in text:
-              raise SystemExit('Application-list anchor was not found')
-          text = text.replace(
-              app_anchor,
-              '''        if (routingSourceMode == com.csqtt.client.routing.RoutingSourceMode.APPLICATIONS) {
-          Text(
-              text = stringResource(R.string.exceptions_selected_count, selectedPackages.size),''',
-              1,
+          if 'return@CsqttScreen' not in text:
+              raise SystemExit('return@CsqttScreen not found')
+          text = text.replace('return@CsqttScreen', 'return@AppSectionCard', 1)
+
+          lines = text.splitlines()
+          selected_line = next(
+              (i for i, line in enumerate(lines) if 'R.string.exceptions_selected_count' in line),
+              None,
+          )
+          if selected_line is None or selected_line == 0:
+              raise SystemExit('Selected-app count anchor not found')
+          text_line = selected_line - 1
+          if lines[text_line].strip() != 'Text(':
+              raise SystemExit('Unexpected selected-app count layout')
+          indent = lines[text_line][:-len(lines[text_line].lstrip())]
+          lines.insert(
+              text_line,
+              indent + 'if (routingSourceMode == com.csqtt.client.routing.RoutingSourceMode.APPLICATIONS) {',
           )
 
-          suffix = '        }\n    }\n}\n'
-          if not text.endswith(suffix):
-              raise SystemExit('Unexpected ExceptionsTab ending; refusing unsafe patch')
-          text = text[:-len(suffix)] + '        }\n        }\n    }\n}\n'
+          if len(lines) < 3 or lines[-2].strip() != '}' or lines[-2] != '    }' or lines[-1] != '}':
+              raise SystemExit('Unexpected ExceptionsTab closing braces')
+          lines.insert(len(lines) - 2, '        }')
+          text = '\n'.join(lines) + '\n'
 
           if 'return@CsqttScreen' in text:
               raise SystemExit('Unpatched return@CsqttScreen remains')
+          if 'return@AppSectionCard' not in text:
+              raise SystemExit('Local AppSectionCard return missing')
+          if old_call in text:
+              raise SystemExit('Weighted RouteListsSection call remains')
+
           exceptions.write_text(text, encoding='utf-8')
           PY
 
@@ -137,8 +120,6 @@ jobs:
           echo '===== RouteListsSection imports ====='
           nl -ba app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt | sed -n '1,45p'
 
-      # Compile and test Kotlin before the expensive 3-ABI Rust build so
-      # source-level failures return quickly during stabilization.
       - name: Run Android unit tests
         id: android_tests
         shell: bash
