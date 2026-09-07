@@ -102,15 +102,30 @@ jobs:
           file ../app/src/main/jniLibs/*/libclient.so
 
       - name: Run Android unit tests
+        id: android_tests
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest --stacktrace --no-daemon
+          set +e
+          ./gradlew testDebugUnitTest --stacktrace --console=plain --no-daemon > gradle-test.log 2>&1
+          status=$?
+          echo "===== LAST 500 LINES OF GRADLE TEST LOG ====="
+          tail -n 500 gradle-test.log
+          exit $status
+
+      - name: Upload Gradle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDTTSL-gradle-diagnostics
+          path: gradle-test.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build universal debug APK
         shell: bash
         run: |
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew assembleDebug --stacktrace --console=plain --no-daemon
           find app/build/outputs/apk -type f -name '*.apk' -print
 
       - name: Prepare APK artifacts
