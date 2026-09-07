@@ -31,10 +31,9 @@ jobs:
       - name: Install Android platform and NDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager \
-            "platforms;android-37" \
-            "build-tools;37.0.0" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
             "ndk;27.2.12479018"
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
@@ -47,8 +46,17 @@ jobs:
           mkdir -p .wdttsl-overlay
           base64 -d wdttsl-overlay-v4.tar.gz.b64 | tar -xz -C .wdttsl-overlay
           python3 .wdttsl-overlay/install_wdttsl_v4.py .
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('compileSdk = 37', 'compileSdk = 36')
+          s = s.replace('targetSdk = 37', 'targetSdk = 36')
+          p.write_text(s, encoding='utf-8')
+          PY
           grep -F 'rootProject.name = "WDTTSL"' settings.gradle.kts
           grep -F 'applicationId = "wdttsl.android"' app/build.gradle.kts
+          grep -F 'compileSdk = 36' app/build.gradle.kts
 
       - name: Set up Rust 1.97.1
         uses: dtolnay/rust-toolchain@master
