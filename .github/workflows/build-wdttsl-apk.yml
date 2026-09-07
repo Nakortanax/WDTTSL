@@ -52,9 +52,7 @@ jobs:
           tar -xzf /tmp/wdttsl-overlay-v4.tar.gz -C .wdttsl-overlay
           python3 .wdttsl-overlay/install_wdttsl_v4.py .
 
-          # The overlay keeps a safety copy of strings.xml next to Android
-          # resources. Resource merger scans values/ and rejects non-.xml files,
-          # so remove only the overlay's temporary backup before Gradle runs.
+          # Overlay safety copies are not valid Android resources.
           find app/src/main/res -type f -name '*.wdttsl.bak' -print -delete
 
           grep -F 'rootProject.name = "WDTTSL"' settings.gradle.kts
@@ -62,6 +60,72 @@ jobs:
           grep -F 'compileSdk = 37' app/build.gradle.kts
           grep -F 'targetSdk = 37' app/build.gradle.kts
           test -z "$(find app/src/main/res -type f -name '*.wdttsl.bak' -print -quit)"
+
+      - name: Fix generated WDTTSL Kotlin compatibility
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Compose 1.12 exposes Modifier.weight through RowScope/ColumnScope.
+          # Importing the internal backing property is rejected by Kotlin 2.4.
+          route = Path('app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt')
+          if route.exists():
+              text = route.read_text(encoding='utf-8')
+              text = text.replace('import androidx.compose.foundation.layout.weight\n', '')
+              route.write_text(text, encoding='utf-8')
+
+          # A lambda passed to the KeyboardActions constructor cannot use
+          # return@KeyboardActions as a local return target. Give that lambda
+          # an explicit label and return to the label instead.
+          exceptions = Path('app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt')
+          text = exceptions.read_text(encoding='utf-8')
+          marker = 'return@KeyboardActions'
+          if marker in text:
+              marker_pos = text.index(marker)
+              lambda_pos = text.rfind('onDone = {', 0, marker_pos)
+              if lambda_pos < 0:
+                  raise SystemExit('Found return@KeyboardActions but no preceding onDone lambda')
+              text = text[:lambda_pos] + text[lambda_pos:].replace('onDone = {', 'onDone = wdttslDone@{', 1)
+              text = text.replace(marker, 'return@wdttslDone')
+              exceptions.write_text(text, encoding='utf-8')
+
+          if 'return@KeyboardActions' in exceptions.read_text(encoding='utf-8'):
+              raise SystemExit('Unpatched return@KeyboardActions remains')
+          PY
+
+          echo '===== ExceptionsTab around site input ====='
+          nl -ba app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt | sed -n '240,275p'
+          echo '===== RouteListsSection imports ====='
+          nl -ba app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt | sed -n '1,45p'
+
+      # Compile and test Kotlin before the expensive 3-ABI Rust build so
+      # source-level failures return quickly during stabilization.
+      - name: Run Android unit tests
+        id: android_tests
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew testDebugUnitTest --stacktrace --console=plain --no-daemon > gradle-test.log 2>&1
+          status=$?
+          echo "===== LAST 500 LINES OF GRADLE TEST LOG ====="
+          tail -n 500 gradle-test.log
+          exit $status
+
+      - name: Upload Gradle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDTTSL-gradle-diagnostics
+          path: |
+            gradle-test.log
+            app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
+            app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+            app/src/main/java/com/csqtt/client/TunVpnService.kt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Set up Rust 1.97.1
         uses: dtolnay/rust-toolchain@master
@@ -100,27 +164,6 @@ jobs:
              ../app/src/main/jniLibs/x86_64/libclient.so
 
           file ../app/src/main/jniLibs/*/libclient.so
-
-      - name: Run Android unit tests
-        id: android_tests
-        shell: bash
-        run: |
-          chmod +x gradlew
-          set +e
-          ./gradlew testDebugUnitTest --stacktrace --console=plain --no-daemon > gradle-test.log 2>&1
-          status=$?
-          echo "===== LAST 500 LINES OF GRADLE TEST LOG ====="
-          tail -n 500 gradle-test.log
-          exit $status
-
-      - name: Upload Gradle diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: WDTTSL-gradle-diagnostics
-          path: gradle-test.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Build universal debug APK
         shell: bash
