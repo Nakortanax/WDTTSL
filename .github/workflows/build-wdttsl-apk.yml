@@ -51,6 +51,12 @@ jobs:
           echo '251725cee9639fd7a5fa7ad7df92132bf1d4146ea336fec8b696ae22fbc2052e  /tmp/wdttsl-overlay-v4.tar.gz' | sha256sum -c -
           tar -xzf /tmp/wdttsl-overlay-v4.tar.gz -C .wdttsl-overlay
           python3 .wdttsl-overlay/install_wdttsl_v4.py .
+
+          # The overlay keeps a safety copy of strings.xml next to Android
+          # resources. Resource merger scans values/ and rejects non-.xml files,
+          # so remove only the overlay's temporary backup before Gradle runs.
+          find app/src/main/res -type f -name '*.wdttsl.bak' -print -delete
+
           python3 - <<'PY'
           from pathlib import Path
           p = Path('app/build.gradle.kts')
@@ -62,6 +68,7 @@ jobs:
           grep -F 'rootProject.name = "WDTTSL"' settings.gradle.kts
           grep -F 'applicationId = "wdttsl.android"' app/build.gradle.kts
           grep -F 'compileSdk = 36' app/build.gradle.kts
+          test -z "$(find app/src/main/res -type f -name '*.wdttsl.bak' -print -quit)"
 
       - name: Set up Rust 1.97.1
         uses: dtolnay/rust-toolchain@master
@@ -73,7 +80,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config perl
+          sudo apt-get install -y cmake ninja-build pkg-config perl unzip
           cargo install cargo-ndk --locked
 
       - name: Build Rust client for Android
@@ -127,6 +134,22 @@ jobs:
         run: |
           ./gradlew assembleDebug --stacktrace --console=plain --no-daemon
           find app/build/outputs/apk -type f -name '*.apk' -print
+
+      - name: Verify universal APK native ABIs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
+          test -n "$universal"
+          unzip -l "$universal" | tee dist/APK-CONTENTS.txt
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            entry="lib/$abi/libclient.so"
+            unzip -l "$universal" | grep -F "$entry"
+            unzip -p "$universal" "$entry" > "/tmp/libclient-$abi.so"
+            test -s "/tmp/libclient-$abi.so"
+            file "/tmp/libclient-$abi.so"
+          done
 
       - name: Prepare APK artifacts
         shell: bash
