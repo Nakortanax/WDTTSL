@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           sdkmanager \
-            "platforms;android-37" \
+            "platforms;android-37.0" \
             "build-tools;37.0.0" \
             "ndk;27.2.12479018"
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
