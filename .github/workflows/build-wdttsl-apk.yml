@@ -42,9 +42,14 @@ jobs:
       - name: Apply WDTTSL v4 overlay
         shell: bash
         run: |
+          set -euxo pipefail
           rm -rf .wdttsl-overlay
           mkdir -p .wdttsl-overlay
-          base64 -d wdttsl-overlay-v4.tar.gz.b64 | tar -xz -C .wdttsl-overlay
+          cat wdttsl-overlay-parts/part_*.b64 > /tmp/wdttsl-overlay-v4.tar.gz.b64
+          echo '5a10035ca9b437e1f81c6ddcd8a7f01bbe236c857637814b9b49b10155eaf427  /tmp/wdttsl-overlay-v4.tar.gz.b64' | sha256sum -c -
+          base64 -d /tmp/wdttsl-overlay-v4.tar.gz.b64 > /tmp/wdttsl-overlay-v4.tar.gz
+          echo '251725cee9639fd7a5fa7ad7df92132bf1d4146ea336fec8b696ae22fbc2052e  /tmp/wdttsl-overlay-v4.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/wdttsl-overlay-v4.tar.gz -C .wdttsl-overlay
           python3 .wdttsl-overlay/install_wdttsl_v4.py .
           python3 - <<'PY'
           from pathlib import Path
