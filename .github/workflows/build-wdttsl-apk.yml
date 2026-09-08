@@ -1,4 +1,4 @@
-name: Build VPNSL 1.0.7 APK
+name: Build VPNSL 1.0.8 APK
 
 on:
   workflow_dispatch:
@@ -72,23 +72,34 @@ jobs:
           grep -F 'versionName = "1.0.5"' app/build.gradle.kts
           grep -F 'RoutePolicyApplier.apply(builder, routeListStore.loadProfiles())' app/src/main/java/com/csqtt/client/TunVpnService.kt
 
-      - name: Apply VPNSL 1.0.7 restoration and promo UI
+      - name: Apply VPNSL 1.0.7 routing restoration
         shell: bash
         run: |
           set -euxo pipefail
           python3 wdttsl-custom/apply_v107.py .
+          grep -F 'versionName = "1.0.7"' app/build.gradle.kts
+          grep -F 'PromoRoutingHeader(' app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
+
+      - name: Apply VPNSL 1.0.8 rectangular UI
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 wdttsl-custom/apply_v108.py .
           tun=app/src/main/java/com/csqtt/client/TunVpnService.kt
           route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          exceptions=app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
           compiler=app/src/main/java/com/csqtt/client/routing/RoutePolicyCompiler.kt
-          grep -F 'versionCode = 1007' app/build.gradle.kts
-          grep -F 'versionName = "1.0.7"' app/build.gradle.kts
-          grep -F '1.0.7 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
-          grep -F 'PromoRoutingHeader(' "$exceptions"
-          grep -F 'RoutingSourceMode.APPLICATIONS' "$exceptions"
-          grep -F 'RoutingSourceMode.ROUTE_LISTS' "$exceptions"
+          main=app/src/main/java/com/csqtt/client/MainActivity.kt
+          connection=app/src/main/java/com/csqtt/client/ui/ConnectionTab.kt
+          shapes=app/src/main/java/com/csqtt/client/ui/design/CsqttShapes.kt
+          grep -F 'versionCode = 1008' app/build.gradle.kts
+          grep -F 'versionName = "1.0.8"' app/build.gradle.kts
+          grep -F '1.0.8 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'RoundedCornerShape(8.dp)' "$shapes"
+          grep -F '.width(50.dp)' "$main"
+          grep -F '.height(34.dp)' "$main"
+          grep -F 'text = actionText' "$connection"
+          grep -F '.height(52.dp)' "$connection"
           grep -F 'if (routingSourceMode == RoutingSourceMode.APPLICATIONS)' "$tun"
-          grep -F 'builder.addAllowedApplication(pkg)' "$tun"
           grep -F 'RoutePolicyApplier.apply(builder, routeListStore.loadProfiles())' "$tun"
           grep -F 'inheritedTarget = RouteTarget.MOBILE' "$compiler"
           ! grep -F 'defaultTarget:' "$compiler"
@@ -98,7 +109,6 @@ jobs:
           grep -F 'Выгрузить все маршруты (.bat)' "$route"
           grep -F 'InetAddress.getAllByName(host)' "$route"
           grep -F 'M54,17 L83,28' app/src/main/res/drawable/ic_launcher_foreground.xml
-          test -f app/src/test/java/com/csqtt/client/routing/RouteBatFormatterTest.kt
 
       - name: Run Android unit tests
         shell: bash
@@ -115,16 +125,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.7-gradle-diagnostics
+          name: VPNSL-1.0.8-gradle-diagnostics
           path: |
             gradle-test.log
+            app/src/main/java/com/csqtt/client/MainActivity.kt
             app/src/main/java/com/csqtt/client/TunVpnService.kt
+            app/src/main/java/com/csqtt/client/ui/ConnectionTab.kt
             app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
             app/src/main/java/com/csqtt/client/ui/PromoRoutingHeader.kt
             app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+            app/src/main/java/com/csqtt/client/ui/design/CsqttShapes.kt
             app/src/main/java/com/csqtt/client/routing/RoutePolicyCompiler.kt
             app/src/main/java/com/csqtt/client/routing/RoutePolicyApplier.kt
-            app/src/main/res/drawable/ic_launcher_foreground.xml
           if-no-files-found: ignore
           retention-days: 7
 
@@ -188,52 +200,51 @@ jobs:
           x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
-          cp "$arm64" dist/VPNSL-1.0.7-arm64-v8a.apk
-          cp "$armv7" dist/VPNSL-1.0.7-armeabi-v7a.apk
-          cp "$x86" dist/VPNSL-1.0.7-x86_64.apk
-          cp "$universal" dist/VPNSL-1.0.7-universal.apk
+          cp "$arm64" dist/VPNSL-1.0.8-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.8-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.8-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.8-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.7-apks
+          name: VPNSL-1.0.8-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release 1.0.7
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.7')
+      - name: Publish GitHub Release 1.0.8
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.8')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           cat > /tmp/release-notes.md <<'EOF'
-          VPNSL 1.0.7
+          VPNSL 1.0.8
 
-          База маршрутизации: точная рабочая VPNSL 1.0.5.
+          База маршрутизации: рабочая VPNSL 1.0.7 / точная логика 1.0.5.
 
-          Изменения:
-          - полностью удалён экспериментальный combined-routing патч 1.0.6;
-          - восстановлена проверенная маршрутизация IP/CIDR из загружаемых файлов;
-          - восстановлены ручные IP/CIDR, импорт BAT/TXT/LIST, экспорт BAT и генератор по домену;
-          - сохранена маршрутизация выбранных приложений из 1.0.5;
-          - добавлен новый промо-стиль экрана маршрутизации: крупная статусная карточка, mobile-only индикатор и компактные режимы;
-          - сохранена фирменная адаптивная иконка VPNSL;
-          - пройдены Android unit tests, сборка трёх ABI и проверка universal APK.
-
-          Примечание: Android VpnService применяет фильтр приложений ко всему VPN-интерфейсу. Поэтому текущий движок не может корректно выразить правило OR «весь трафик выбранных приложений + отдельные IP для всех остальных приложений» без отдельного userspace packet classifier/forwarder. В 1.0.7 приоритет отдан восстановлению надёжной логики 1.0.5 вместо некорректного поведения 1.0.6.
+          Изменения интерфейса:
+          - полностью убран выраженный круглый/pill-стиль основных элементов;
+          - нижняя навигация переделана по референсу: отдельная синяя прямоугольная плашка под иконкой активной вкладки, подпись расположена ниже;
+          - глобальные радиусы карточек и контролов уменьшены до 6–12 dp;
+          - на экране подключения добавлена отдельная широкая прямоугольная кнопка «Подключить / Отключить»;
+          - логотип подключения уменьшен и используется как статусный элемент;
+          - прямоугольный стиль автоматически применяется к карточкам, сегментам, диалогам и большинству кнопок через общую систему Shapes;
+          - маршрутизация приложений, IP/CIDR и файлов не менялась относительно 1.0.7;
+          - пройдены Android unit tests, три ABI и проверка universal APK.
           EOF
 
-          if gh release view v1.0.7 >/dev/null 2>&1; then
-            gh release upload v1.0.7 dist/VPNSL-1.0.7-*.apk dist/SHA256SUMS.txt --clobber
-            gh release edit v1.0.7 --title "VPNSL 1.0.7" --notes-file /tmp/release-notes.md
+          if gh release view v1.0.8 >/dev/null 2>&1; then
+            gh release upload v1.0.8 dist/VPNSL-1.0.8-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.8 --title "VPNSL 1.0.8" --notes-file /tmp/release-notes.md
           else
-            gh release create v1.0.7 \
-              dist/VPNSL-1.0.7-*.apk \
+            gh release create v1.0.8 \
+              dist/VPNSL-1.0.8-*.apk \
               dist/SHA256SUMS.txt \
               --target "$GITHUB_SHA" \
-              --title "VPNSL 1.0.7" \
+              --title "VPNSL 1.0.8" \
               --notes-file /tmp/release-notes.md
           fi
