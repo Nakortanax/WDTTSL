@@ -21,7 +21,6 @@ def replace_required(text, old, new, label):
         raise SystemExit(f"CSQTTS customization anchor missing: {label}")
     return text.replace(old, new, 1)
 
-
 # Replace generated route-list UI with CSQTTS v1 UI.
 route_src = CUSTOM / "RouteListsSection.kt"
 route_dst = ROOT / "app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt"
@@ -101,9 +100,30 @@ info = info.replace('title = "Репозиторий CSQTT"', 'title = "Репо
 info = info.replace('ClipData.newPlainText("CSQTT Report", buildSupportReport())', 'ClipData.newPlainText("CSQTTS Report", buildSupportReport())')
 write("app/src/main/java/com/csqtt/client/ui/InfoTab.kt", info)
 
-# Update HTTP identity to the new app name while retaining protocol internals.
+# Update HTTP identity and use only Releases from the CSQTTS fork.
+# A fork can inherit upstream git tags (for example v2.1.9); those tags must not
+# be treated as CSQTTS application releases after resetting the app version to 1.0.
 update = read("app/src/main/java/com/csqtt/client/AppUpdate.kt")
 update = update.replace('"CSQTTAndroid/${BuildConfig.VERSION_NAME}"', '"CSQTTSAndroid/${BuildConfig.VERSION_NAME}"')
+old_fetch = """suspend fun fetchLatestReleaseInfo(localVersion: String? = null): AppReleaseInfo? = withContext(Dispatchers.IO) {
+    val latestRelease = fetchReleaseFromLatestWebRedirect()
+        ?: fetchReleaseFromLatestEndpoint()
+        ?: fetchLatestStableReleaseFromList()
+    val latestTag = fetchLatestTagFromList()
+
+    when {
+        latestRelease == null -> latestTag
+        latestTag == null -> latestRelease
+        isNewerVersion(latestRelease.versionTag, latestTag.versionTag) -> latestTag
+        else -> latestRelease
+    }
+}"""
+new_fetch = """suspend fun fetchLatestReleaseInfo(localVersion: String? = null): AppReleaseInfo? = withContext(Dispatchers.IO) {
+    fetchReleaseFromLatestWebRedirect()
+        ?: fetchReleaseFromLatestEndpoint()
+        ?: fetchLatestStableReleaseFromList()
+}"""
+update = replace_required(update, old_fetch, new_fetch, "CSQTTS releases-only updater")
 write("app/src/main/java/com/csqtt/client/AppUpdate.kt", update)
 
 # Visible VPN session name; protocol/event constants remain CSQTT for server compatibility.
