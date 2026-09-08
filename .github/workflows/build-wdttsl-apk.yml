@@ -1,4 +1,4 @@
-name: Build CSQTTS 1.0 APK
+name: Build VPNSL 1.0.1 APK
 
 on:
   workflow_dispatch:
@@ -7,7 +7,11 @@ on:
       - wdttsl-build
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: vpnsl-1.0.1-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -39,7 +43,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
-      - name: Apply WDTTSL v4 overlay
+      - name: Apply WDTTSL v4 routing/mobile overlay
         shell: bash
         run: |
           set -euxo pipefail
@@ -51,28 +55,28 @@ jobs:
           echo '251725cee9639fd7a5fa7ad7df92132bf1d4146ea336fec8b696ae22fbc2052e  /tmp/wdttsl-overlay-v4.tar.gz' | sha256sum -c -
           tar -xzf /tmp/wdttsl-overlay-v4.tar.gz -C .wdttsl-overlay
           python3 .wdttsl-overlay/install_wdttsl_v4.py .
-
           find app/src/main/res -type f -name '*.wdttsl.bak' -print -delete
 
-          grep -F 'rootProject.name = "WDTTSL"' settings.gradle.kts
           grep -F 'applicationId = "wdttsl.android"' app/build.gradle.kts
           grep -F 'compileSdk = 37' app/build.gradle.kts
           grep -F 'targetSdk = 37' app/build.gradle.kts
           test -z "$(find app/src/main/res -type f -name '*.wdttsl.bak' -print -quit)"
 
-      - name: Apply CSQTTS 1.0 customization
+      - name: Apply VPNSL 1.0.1 customization
         shell: bash
         run: |
           set -euxo pipefail
           python3 wdttsl-custom/apply_csqtts_v1.py .
-          grep -F 'rootProject.name = "CSQTTS"' settings.gradle.kts
-          grep -F 'versionName = "1.0"' app/build.gradle.kts
-          grep -F '<string name="app_name">CSQTTS</string>' app/src/main/res/values/strings.xml
-          grep -F '1.0 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
-          grep -F 'Добавить сайт вручную' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'rootProject.name = "VPNSL"' settings.gradle.kts
+          grep -F 'versionCode = 1001' app/build.gradle.kts
+          grep -F 'versionName = "1.0.1"' app/build.gradle.kts
+          grep -F '<string name="app_name">VPNSL</string>' app/src/main/res/values/strings.xml
+          grep -F '1.0.1 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'IP-адрес или подсеть' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'RouteTarget.WDTTSL to "VPNSL"' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
           grep -F 'https://github.com/Nakortanax/WDTTSL' app/src/main/java/com/csqtt/client/Constants.kt
-          if grep -Fq 'GitHub профиль amurcanov' app/src/main/java/com/csqtt/client/ui/InfoTab.kt; then
-            echo 'Old developer profile remains in InfoTab' >&2
+          if grep -Eq 'InetAddress|normalizeWebsiteHost|resolveWebsiteIpv4|Добавить сайт вручную' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt; then
+            echo 'Domain/DNS routing code remains in RouteListsSection' >&2
             exit 1
           fi
 
@@ -126,11 +130,6 @@ jobs:
           exceptions.write_text(text, encoding='utf-8')
           PY
 
-          echo '===== ExceptionsTab route/app split ====='
-          nl -ba app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt | sed -n '238,335p'
-          echo '===== CSQTTS RouteListsSection ====='
-          nl -ba app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt | sed -n '1,220p'
-
       - name: Run Android unit tests
         id: android_tests
         shell: bash
@@ -147,7 +146,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CSQTTS-1.0-gradle-diagnostics
+          name: VPNSL-1.0.1-gradle-diagnostics
           path: |
             gradle-test.log
             app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
@@ -157,6 +156,7 @@ jobs:
             app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
             app/src/main/java/com/csqtt/client/Constants.kt
             app/src/main/java/com/csqtt/client/TunVpnService.kt
+            app/src/main/java/com/csqtt/client/TunnelService.kt
           if-no-files-found: ignore
           retention-days: 7
 
@@ -198,7 +198,7 @@ jobs:
 
           file ../app/src/main/jniLibs/*/libclient.so
 
-      - name: Build universal debug APK
+      - name: Build debug APKs
         shell: bash
         run: |
           ./gradlew assembleDebug --stacktrace --console=plain --no-daemon
@@ -208,10 +208,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p dist
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$universal"
-          unzip -l "$universal" | tee dist/APK-CONTENTS.txt
           for abi in arm64-v8a armeabi-v7a x86_64; do
             entry="lib/$abi/libclient.so"
             unzip -l "$universal" | grep -F "$entry"
@@ -220,31 +218,77 @@ jobs:
             file "/tmp/libclient-$abi.so"
           done
 
-      - name: Verify CSQTTS branding in build inputs
+      - name: Verify VPNSL branding and routing inputs
         shell: bash
         run: |
           set -euxo pipefail
-          grep -F 'versionName = "1.0"' app/build.gradle.kts
-          grep -F '<string name="app_name">CSQTTS</string>' app/src/main/res/values/strings.xml
-          grep -F 'text = "CSQTTS"' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
-          grep -F 'text = "1.0 by Sazhaev-IA"' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
-          grep -F 'Добавить сайт вручную' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'versionName = "1.0.1"' app/build.gradle.kts
+          grep -F '<string name="app_name">VPNSL</string>' app/src/main/res/values/strings.xml
+          grep -F 'text = "VPNSL"' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'text = "1.0.1 by Sazhaev-IA"' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'IP-адрес или подсеть' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'normalizedInput = if (' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'val route = Ipv4Cidr.parse(normalizedInput)' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F '.setSession("VPNSL")' app/src/main/java/com/csqtt/client/TunVpnService.kt
+          grep -F '.setContentTitle("VPNSL")' app/src/main/java/com/csqtt/client/TunnelService.kt
 
       - name: Prepare APK artifacts
         shell: bash
         run: |
           set -euxo pipefail
+          rm -rf dist
           mkdir -p dist
-          find app/build/outputs/apk/debug -type f -name '*.apk' -exec cp {} dist/ \;
+
+          arm64="$(find app/build/outputs/apk/debug -type f -name '*arm64-v8a*debug*.apk' | head -n1)"
+          armv7="$(find app/build/outputs/apk/debug -type f -name '*armeabi-v7a*debug*.apk' | head -n1)"
+          x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
-          test -n "$universal"
-          cp "$universal" dist/CSQTTS-1.0-universal-debug.apk
+          test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
+
+          cp "$arm64" dist/VPNSL-1.0.1-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.1-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.1-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.1-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
-      - name: Upload APKs
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CSQTTS-1.0-debug-apks
+          name: VPNSL-1.0.1-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release 1.0.1
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.1')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          cat > /tmp/release-notes.md <<'EOF'
+          VPNSL 1.0.1
+
+          Изменения:
+          - приложение переименовано в VPNSL;
+          - версия 1.0.1 by Sazhaev-IA;
+          - ручная маршрутизация теперь принимает только IPv4/CIDR, без DNS и доменных имён;
+          - логика ручного маршрута: назначение IP/подсеть + выбор интерфейса «Мобильная сеть» или «VPNSL», аналогично статическому маршруту Keenetic;
+          - обычный IPv4 автоматически трактуется как /32;
+          - сохранены импорт файлов маршрутов, режим приложений и обязательный mobile-only режим;
+          - ссылки и обновления направлены на Nakortanax/WDTTSL.
+
+          Серверная часть остаётся совместима с CSQTT 2.1.9 / CSQTT-WIRE-3.
+          EOF
+
+          if gh release view v1.0.1 >/dev/null 2>&1; then
+            gh release upload v1.0.1 dist/VPNSL-1.0.1-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.1 --title "VPNSL 1.0.1" --notes-file /tmp/release-notes.md
+          else
+            gh release create v1.0.1 \
+              dist/VPNSL-1.0.1-*.apk \
+              dist/SHA256SUMS.txt \
+              --target "$GITHUB_SHA" \
+              --title "VPNSL 1.0.1" \
+              --notes-file /tmp/release-notes.md
+          fi
