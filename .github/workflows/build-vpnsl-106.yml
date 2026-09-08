@@ -1,0 +1,194 @@
+name: Build VPNSL 1.0.6 APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - wdttsl-build
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vpnsl-106-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.2.12479018"
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Apply exact VPNSL 1.0.5 baseline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf .wdttsl-overlay
+          mkdir -p .wdttsl-overlay
+          cat wdttsl-overlay-parts/part_*.b64 > /tmp/wdttsl-overlay-v4.tar.gz.b64
+          echo '5a10035ca9b437e1f81c6ddcd8a7f01bbe236c857637814b9b49b10155eaf427  /tmp/wdttsl-overlay-v4.tar.gz.b64' | sha256sum -c -
+          base64 -d /tmp/wdttsl-overlay-v4.tar.gz.b64 > /tmp/wdttsl-overlay-v4.tar.gz
+          echo '251725cee9639fd7a5fa7ad7df92132bf1d4146ea336fec8b696ae22fbc2052e  /tmp/wdttsl-overlay-v4.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/wdttsl-overlay-v4.tar.gz -C .wdttsl-overlay
+          python3 .wdttsl-overlay/install_wdttsl_v4.py .
+          find app/src/main/res -type f -name '*.wdttsl.bak' -print -delete
+          python3 wdttsl-custom/apply_csqtts_v1.py .
+          python3 wdttsl-custom/apply_v105.py .
+
+      - name: Apply VPNSL 1.0.6 combined routing
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 wdttsl-custom/apply_v106.py .
+          grep -F 'versionCode = 1006' app/build.gradle.kts
+          grep -F 'versionName = "1.0.6"' app/build.gradle.kts
+          grep -F '1.0.6 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'Приложения и маршруты работают одновременно' app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
+          grep -F 'CombinedFlowPolicyServer' app/src/main/java/com/csqtt/client/TunVpnService.kt
+          grep -F 'socket.outputStream.write(if (combinedRoutingActive) 2 else 1)' app/src/main/java/com/csqtt/client/TunVpnService.kt
+          grep -F 'mod direct_path;' rust-client/main.rs
+          grep -F 'mod flow_policy;' rust-client/main.rs
+          test -f app/src/main/res/drawable/ic_vpnsl_launcher.xml
+
+      - name: Android unit tests
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew testDebugUnitTest --stacktrace --console=plain --no-daemon > gradle-test-106.log 2>&1
+          status=$?
+          tail -n 500 gradle-test-106.log
+          exit $status
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Rust host tests
+        shell: bash
+        working-directory: rust-client
+        run: |
+          set -euxo pipefail
+          cargo test --all-targets
+
+      - name: Install native build tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config perl unzip
+          cargo install cargo-ndk --locked
+
+      - name: Build Rust client for Android
+        shell: bash
+        working-directory: rust-client
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+        run: |
+          set -euxo pipefail
+          mkdir -p ../app/src/main/jniLibs/arm64-v8a ../app/src/main/jniLibs/armeabi-v7a ../app/src/main/jniLibs/x86_64
+          cargo ndk -t arm64-v8a -P 26 build --release --target-dir ../build/rust-client-android-arm64
+          cp ../build/rust-client-android-arm64/aarch64-linux-android/release/client ../app/src/main/jniLibs/arm64-v8a/libclient.so
+          cargo ndk -t armeabi-v7a -P 26 build --release --target-dir ../build/rust-client-android-armv7
+          cp ../build/rust-client-android-armv7/armv7-linux-androideabi/release/client ../app/src/main/jniLibs/armeabi-v7a/libclient.so
+          cargo ndk -t x86_64 -P 26 build --release --target-dir ../build/rust-client-android-x86_64
+          cp ../build/rust-client-android-x86_64/x86_64-linux-android/release/client ../app/src/main/jniLibs/x86_64/libclient.so
+          file ../app/src/main/jniLibs/*/libclient.so
+
+      - name: Build APK variants
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./gradlew assembleDebug --stacktrace --console=plain --no-daemon
+          find app/build/outputs/apk -type f -name '*.apk' -print
+
+      - name: Verify universal APK ABIs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
+          test -n "$universal"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$universal" | grep -F "lib/$abi/libclient.so"
+          done
+
+      - name: Prepare release files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf dist && mkdir -p dist
+          arm64="$(find app/build/outputs/apk/debug -type f -name '*arm64-v8a*debug*.apk' | head -n1)"
+          armv7="$(find app/build/outputs/apk/debug -type f -name '*armeabi-v7a*debug*.apk' | head -n1)"
+          x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
+          universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
+          test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
+          cp "$arm64" dist/VPNSL-1.0.6-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.6-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.6-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.6-universal.apk
+          sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPNSL-1.0.6-apks
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPNSL-1.0.6-diagnostics
+          path: |
+            gradle-test-106.log
+            app/src/main/java/com/csqtt/client/TunVpnService.kt
+            app/src/main/java/com/csqtt/client/routing/CombinedFlowPolicyServer.kt
+            rust-client/direct_path.rs
+            rust-client/flow_policy.rs
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Publish GitHub Release 1.0.6
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.6')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          cat > /tmp/release-notes.md <<'EOF'
+          VPNSL 1.0.6 — rebuilt from the proven 1.0.5 baseline.
+
+          - Application rules and active file/IP/CIDR routes now work together as a union.
+          - Selected application -> WDTTSL for all its IPv4 TCP/UDP destinations.
+          - Active WDTTSL destination route -> WDTTSL for traffic from any application.
+          - Everything else remains on the physical mobile path.
+          - Combined per-app + per-destination classification uses Android 10+ connection-owner API; Android 8–9 keep the proven single-source app-only or route-only paths.
+          - Added a dedicated VPNSL launcher icon.
+          - Existing 1.0.5 route import/export/generator, mobile-only behavior and CSQTT transport are retained.
+          EOF
+          if gh release view v1.0.6 >/dev/null 2>&1; then
+            gh release upload v1.0.6 dist/VPNSL-1.0.6-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.6 --title "VPNSL 1.0.6" --notes-file /tmp/release-notes.md
+          else
+            gh release create v1.0.6 dist/VPNSL-1.0.6-*.apk dist/SHA256SUMS.txt --target "$GITHUB_SHA" --title "VPNSL 1.0.6" --notes-file /tmp/release-notes.md
+          fi
