@@ -22,7 +22,7 @@ def replace_required(text, old, new, label):
     return text.replace(old, new, 1)
 
 
-# Replace generated route-list UI with VPNSL 1.0.1 UI.
+# Replace generated route-list UI with the current VPNSL custom UI.
 route_src = CUSTOM / "RouteListsSection.kt"
 route_dst = ROOT / "app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt"
 if not route_src.is_file():
@@ -143,18 +143,19 @@ service = service.replace('"WDTTSL"', '"VPNSL"')
 service = service.replace('"CSQTTS"', '"VPNSL"')
 write("app/src/main/java/com/csqtt/client/TunnelService.kt", service)
 
-# Sanity checks.
+# Sanity checks. DNS is allowed only as a user-invoked BAT generator in later
+# VPNSL versions; actual VPN routing still consumes explicit IPv4/CIDR entries.
+route_text = route_dst.read_text(encoding="utf-8")
 checks = {
     "version 1.0.1": 'versionName = "1.0.1"' in read("app/build.gradle.kts"),
     "version code 1001": 'versionCode = 1001' in read("app/build.gradle.kts"),
     "app name": '>VPNSL</string>' in read("app/src/main/res/values/strings.xml"),
     "github repo": 'https://github.com/Nakortanax/WDTTSL' in read("app/src/main/java/com/csqtt/client/Constants.kt"),
-    "manual IPv4 route UI": 'IP-адрес или подсеть' in route_dst.read_text(encoding="utf-8"),
-    "no DNS route lookup": 'InetAddress' not in route_dst.read_text(encoding="utf-8"),
+    "manual IPv4 route UI": 'IP-адрес или подсеть' in route_text,
     "new header": '1.0.1 by Sazhaev-IA' in screen,
 }
 failed = [name for name, ok in checks.items() if not ok]
 if failed:
     raise SystemExit("VPNSL customization verification failed: " + ", ".join(failed))
 
-print("VPNSL 1.0.1 customizations applied")
+print("VPNSL base customizations applied")
