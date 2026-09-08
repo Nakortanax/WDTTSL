@@ -66,11 +66,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "csqtt.quic.amurcanov"
+        applicationId = "wdttsl.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 221
-        versionName = "2.1.9"
+        versionCode = 1005
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

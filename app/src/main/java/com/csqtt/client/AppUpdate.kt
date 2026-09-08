@@ -46,17 +46,9 @@ enum class RemoteVersionSource {
 }
 
 suspend fun fetchLatestReleaseInfo(localVersion: String? = null): AppReleaseInfo? = withContext(Dispatchers.IO) {
-    val latestRelease = fetchReleaseFromLatestWebRedirect()
+    fetchReleaseFromLatestWebRedirect()
         ?: fetchReleaseFromLatestEndpoint()
         ?: fetchLatestStableReleaseFromList()
-    val latestTag = fetchLatestTagFromList()
-
-    when {
-        latestRelease == null -> latestTag
-        latestTag == null -> latestRelease
-        isNewerVersion(latestRelease.versionTag, latestTag.versionTag) -> latestTag
-        else -> latestRelease
-    }
 }
 
 fun isNewerVersion(local: String, remote: String): Boolean {
@@ -140,7 +132,7 @@ private fun fetchReleaseFromLatestWebRedirect(): AppReleaseInfo? {
         conn.instanceFollowRedirects = false
         conn.requestMethod = "GET"
         conn.setRequestProperty("Accept", "text/html,*/*")
-        conn.setRequestProperty("User-Agent", "CSQTTAndroid/${BuildConfig.VERSION_NAME}")
+        conn.setRequestProperty("User-Agent", "VPNSLAndroid/${BuildConfig.VERSION_NAME}")
         conn.connectTimeout = 8_000
         conn.readTimeout = 8_000
 
@@ -198,7 +190,7 @@ private fun fetchHttpText(
         if (isGitHubApi) {
             conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
         }
-        conn.setRequestProperty("User-Agent", "CSQTTAndroid/${BuildConfig.VERSION_NAME}")
+        conn.setRequestProperty("User-Agent", "VPNSLAndroid/${BuildConfig.VERSION_NAME}")
         conn.connectTimeout = 8_000
         conn.readTimeout = 8_000
 

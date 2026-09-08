@@ -430,6 +430,7 @@ fun MainScreen(
                         .padding(padding)
                         .consumeWindowInsets(padding)
                         .pointerInput(selectedTab, csqttLinkMode) {
+                        if (selectedTab == 3) return@pointerInput
                         var totalDrag = 0f
                         detectHorizontalDragGestures(
                             onDragStart = {

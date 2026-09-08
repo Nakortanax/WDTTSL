@@ -66,22 +66,21 @@ fun CsqttScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_csqtt_logo),
-                    contentDescription = "CSQTT",
-                    tint = Color.Unspecified,
-                    modifier = Modifier.height(26.dp)
+                Text(
+                    text = "VPNSL",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
                 )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_v219_by_amurcanov),
-                        contentDescription = "v2.1.9 by amurcanov",
-                        tint = Color.Unspecified,
-                        modifier = Modifier.height(19.dp)
+                    Text(
+                        text = "1.0.5 by Sazhaev-IA",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     headerActions?.let { Row(content = it) }
                 }

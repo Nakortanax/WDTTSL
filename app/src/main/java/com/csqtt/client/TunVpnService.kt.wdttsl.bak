@@ -17,9 +17,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import com.csqtt.client.routing.RouteListStore
-import com.csqtt.client.routing.RoutePolicyApplier
-import com.csqtt.client.routing.RoutingSourceMode
 
 class TunVpnService : VpnService() {
     private val serviceJob = SupervisorJob()
@@ -108,70 +105,78 @@ class TunVpnService : VpnService() {
                 failVpn("разрешение Android VPN не выдано")
                 return
             }
+
             val settingsStore = SettingsStore(applicationContext)
             val savedExcluded = settingsStore.excludedApps.first()
+            val isWhitelist = settingsStore.isWhitelist.first()
             val userSelected = savedExcluded.split(",").filter { it.isNotEmpty() }.toSet()
-            val routeListStore = RouteListStore(applicationContext)
-            val routingSourceMode = routeListStore.routingSourceMode()
             val transportPackages = setOf(
                 applicationContext.packageName,
                 CsqttConstants.General.PACKAGE_VK,
                 CsqttConstants.General.PACKAGE_VK_CALLS
             )
+
             val builder = Builder()
-                .setSession("VPNSL")
+                .setSession("CSQTT")
                 .setMtu(CsqttConstants.Vpn.DEFAULT_MTU)
                 .addAddress(clientIp, 32)
+                .addRoute("0.0.0.0", 0)
 
-            if (routingSourceMode == RoutingSourceMode.APPLICATIONS) {
-                // Mobile by default; selected applications enter WDTTSL.
-                builder.addRoute("0.0.0.0", 0)
-
-                var validDnsServers = 0
-                dns.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { dnsServer ->
-                    try {
-                        builder.addDnsServer(dnsServer)
-                        validDnsServers++
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Invalid DNS server: $dnsServer")
-                    }
+            var validDnsServers = 0
+            dns.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { dnsServer ->
+                try {
+                    builder.addDnsServer(dnsServer)
+                    validDnsServers++
+                } catch (e: Exception) {
+                    Log.w(TAG, "Invalid DNS server: $dnsServer")
                 }
-                if (validDnsServers == 0) {
-                    failVpn("сервер передал некорректный DNS: $dns")
-                    return
-                }
+            }
+            if (validDnsServers == 0) {
+                failVpn("сервер передал некорректный DNS: $dns")
+                return
+            }
 
+            if (isWhitelist) {
                 val installedIncluded = userSelected
-                    .filter { pkg -> pkg !in transportPackages && isPackageInstalled(pkg) }
+                    .filter { pkg -> 
+                        pkg !in transportPackages && isPackageInstalled(pkg) 
+                    }
                     .toSet()
                 if (installedIncluded.isEmpty()) {
-                    failVpn("Список пуст: выберите хотя бы одно установленное приложение")
+                    failVpn("Whitelist пуст: выберите хотя бы одно установленное приложение")
                     return
-                }
-                var includedCount = 0
-                installedIncluded.forEach { pkg ->
-                    try {
-                        builder.addAllowedApplication(pkg)
-                        includedCount++
-                    } catch (error: Exception) {
-                        Log.w(TAG, "Unable to include $pkg in VPN", error)
+                } else {
+                    var includedCount = 0
+                    installedIncluded.forEach { pkg ->
+                        try {
+                            builder.addAllowedApplication(pkg)
+                            includedCount++
+                        } catch (error: Exception) {
+                            Log.w(TAG, "Unable to include $pkg in VPN", error)
+                        }
                     }
-                }
-                if (includedCount == 0) {
-                    failVpn("Android не разрешил добавить выбранные приложения в VPN")
-                    return
+                    if (includedCount == 0) {
+                        failVpn("Android не разрешил добавить выбранные приложения в whitelist")
+                        return
+                    }
                 }
             } else {
-                // Keenetic-style destination lists. Only compiled WDTTSL prefixes
-                // enter TUN; everything else remains on the physical mobile route.
-                val routeCount = RoutePolicyApplier.apply(builder, routeListStore.loadProfiles())
-                Log.i(TAG, "WDTTSL route-list mode: $routeCount VPN routes")
-                transportPackages
-                    .filter { isPackageInstalled(it) }
+                try {
+                    builder.addDisallowedApplication(applicationContext.packageName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unable to exclude CSQTT UID from its VPN", e)
+                    failVpn("Android не разрешил исключить CSQTT из собственного VPN")
+                    return
+                }
+                val excluded = transportPackages.toMutableSet()
+                excluded.addAll(userSelected)
+                excluded
+                    .filter { it != applicationContext.packageName && isPackageInstalled(it) }
                     .forEach { pkg ->
-                        try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {}
-                    }
+                    try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {}
+                }
             }
+
             val pfd = builder.establish()
             if (pfd == null) {
                 Log.e(TAG, "VPN permission not granted")

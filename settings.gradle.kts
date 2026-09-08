@@ -15,5 +15,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "CSQTT"
+rootProject.name = "VPNSL"
 include(":app")

@@ -156,7 +156,6 @@ fun InfoTab(
     val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
     var isCheckingUpdates by remember { mutableStateOf(false) }
     var pendingManualRelease by remember { mutableStateOf<com.csqtt.client.AppReleaseInfo?>(null) }
-    var showCryptoDialog by remember { mutableStateOf(false) }
     val updateLatestVersion by settingsStore.updateLatestVersion.collectAsStateWithLifecycle(initialValue = "")
     val updateLastError by settingsStore.updateLastError.collectAsStateWithLifecycle(initialValue = "")
     val updateStatus = remember(isCheckingUpdates, updateLatestVersion, updateLastError, currentVersion) {
@@ -179,11 +178,7 @@ fun InfoTab(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            InfoHeroCard(
-                currentVersion = currentVersion,
-                onSupportClick = { openUrlInBrowser(context, DonateUrl) },
-                onCryptoClick = { showCryptoDialog = true },
-            )
+            CsqttsInfoHeroCard(currentVersion = currentVersion)
 
         ExpandableSectionCard(
             title = "Действия",
@@ -221,7 +216,7 @@ fun InfoTab(
                     subtitle = "Android, ABI, версия, устройство",
                     onClick = {
                         val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("CSQTT Report", buildSupportReport()))
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("VPNSL Report", buildSupportReport()))
                         context.showRaisedToast("Отчёт сформирован и скопирован", Toast.LENGTH_SHORT)
                     },
                     icon = {
@@ -318,10 +313,6 @@ fun InfoTab(
             )
         }
 
-        if (showCryptoDialog) {
-            CryptoDonateDialog(onDismiss = { showCryptoDialog = false })
-        }
-
         ExpandableSectionCard(
             title = "О проекте",
             expanded = projectExpanded,
@@ -336,8 +327,8 @@ fun InfoTab(
             }
         ) {
             ProjectLinkRow(
-                title = "Автор Android-версии",
-                subtitle = "GitHub профиль amurcanov",
+                title = "Автор VPNSL",
+                subtitle = "Sazhaev-IA · GitHub Nakortanax",
                 onClick = { openUrlInBrowser(context, DeveloperProfileUrl) },
                 icon = {
                     Icon(
@@ -350,7 +341,7 @@ fun InfoTab(
             )
 
             ProjectLinkRow(
-                title = "Репозиторий CSQTT",
+                title = "Репозиторий VPNSL",
                 subtitle = "Исходники и релизы приложения",
                 onClick = { openUrlInBrowser(context, RepositoryUrl) },
                 icon = {
