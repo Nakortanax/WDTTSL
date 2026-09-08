@@ -1,4 +1,4 @@
-name: Build VPNSL 1.0.6 APK
+name: Build VPNSL 1.0.7 APK
 
 on:
   workflow_dispatch:
@@ -64,48 +64,43 @@ jobs:
           set -euxo pipefail
           python3 wdttsl-custom/apply_csqtts_v1.py .
 
-      - name: Apply exact VPNSL 1.0.5 baseline
+      - name: Apply exact VPNSL 1.0.5 routing baseline
         shell: bash
         run: |
           set -euxo pipefail
           python3 wdttsl-custom/apply_v105.py .
           grep -F 'versionName = "1.0.5"' app/build.gradle.kts
-          grep -F '1.0.5 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'RoutePolicyApplier.apply(builder, routeListStore.loadProfiles())' app/src/main/java/com/csqtt/client/TunVpnService.kt
 
-      - name: Apply VPNSL 1.0.6 combined routing
+      - name: Apply VPNSL 1.0.7 restoration and promo UI
         shell: bash
         run: |
           set -euxo pipefail
-          python3 wdttsl-custom/apply_v106.py .
-          route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          compiler=app/src/main/java/com/csqtt/client/routing/RoutePolicyCompiler.kt
-          applier=app/src/main/java/com/csqtt/client/routing/RoutePolicyApplier.kt
+          python3 wdttsl-custom/apply_v107.py .
           tun=app/src/main/java/com/csqtt/client/TunVpnService.kt
+          route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
           exceptions=app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
-          icon=app/src/main/res/drawable/ic_launcher_foreground.xml
-          grep -F 'rootProject.name = "VPNSL"' settings.gradle.kts
-          grep -F 'versionCode = 1006' app/build.gradle.kts
-          grep -F 'versionName = "1.0.6"' app/build.gradle.kts
-          grep -F '<string name="app_name">VPNSL</string>' app/src/main/res/values/strings.xml
-          grep -F '1.0.6 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
-          grep -F 'RoutingEditorTab' "$exceptions"
-          ! grep -F 'RoutingSourceMode' "$exceptions"
-          grep -F 'defaultTarget: RouteTarget = RouteTarget.MOBILE' "$compiler"
-          grep -F 'RoutePolicyCompiler.compile(profiles, defaultTarget)' "$applier"
-          grep -F 'defaultTarget = RouteTarget.WDTTSL' "$tun"
-          grep -F 'defaultTarget = RouteTarget.MOBILE' "$tun"
+          compiler=app/src/main/java/com/csqtt/client/routing/RoutePolicyCompiler.kt
+          grep -F 'versionCode = 1007' app/build.gradle.kts
+          grep -F 'versionName = "1.0.7"' app/build.gradle.kts
+          grep -F '1.0.7 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'PromoRoutingHeader(' "$exceptions"
+          grep -F 'RoutingSourceMode.APPLICATIONS' "$exceptions"
+          grep -F 'RoutingSourceMode.ROUTE_LISTS' "$exceptions"
+          grep -F 'if (routingSourceMode == RoutingSourceMode.APPLICATIONS)' "$tun"
           grep -F 'builder.addAllowedApplication(pkg)' "$tun"
-          grep -F 'RouteListsSection(Modifier.fillMaxWidth().weight(1f))' "$exceptions"
-          grep -F 'Подпись ресурса' "$route"
+          grep -F 'RoutePolicyApplier.apply(builder, routeListStore.loadProfiles())' "$tun"
+          grep -F 'inheritedTarget = RouteTarget.MOBILE' "$compiler"
+          ! grep -F 'defaultTarget:' "$compiler"
+          ! grep -F 'defaultTarget = RouteTarget.WDTTSL' "$tun"
+          grep -F 'store.importProfile(name, text, RouteTarget.WDTTSL)' "$route"
+          grep -F 'IP-адрес или подсеть' "$route"
           grep -F 'Выгрузить все маршруты (.bat)' "$route"
-          grep -F 'RouteSubTab.GENERATOR' "$route"
           grep -F 'InetAddress.getAllByName(host)' "$route"
-          grep -F 'M54,17 L83,28' "$icon"
-          test -f app/src/test/java/com/csqtt/client/routing/RoutePolicyCompilerV106Test.kt
+          grep -F 'M54,17 L83,28' app/src/main/res/drawable/ic_launcher_foreground.xml
           test -f app/src/test/java/com/csqtt/client/routing/RouteBatFormatterTest.kt
 
       - name: Run Android unit tests
-        id: android_tests
         shell: bash
         run: |
           chmod +x gradlew
@@ -120,18 +115,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.6-gradle-diagnostics
+          name: VPNSL-1.0.7-gradle-diagnostics
           path: |
             gradle-test.log
-            app/src/main/java/com/csqtt/client/MainActivity.kt
+            app/src/main/java/com/csqtt/client/TunVpnService.kt
             app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
+            app/src/main/java/com/csqtt/client/ui/PromoRoutingHeader.kt
             app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
             app/src/main/java/com/csqtt/client/routing/RoutePolicyCompiler.kt
             app/src/main/java/com/csqtt/client/routing/RoutePolicyApplier.kt
-            app/src/main/java/com/csqtt/client/routing/RouteBatFormatter.kt
-            app/src/test/java/com/csqtt/client/routing/RoutePolicyCompilerV106Test.kt
-            app/src/test/java/com/csqtt/client/routing/RouteBatFormatterTest.kt
-            app/src/main/java/com/csqtt/client/TunVpnService.kt
             app/src/main/res/drawable/ic_launcher_foreground.xml
           if-no-files-found: ignore
           retention-days: 7
@@ -196,51 +188,52 @@ jobs:
           x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
-          cp "$arm64" dist/VPNSL-1.0.6-arm64-v8a.apk
-          cp "$armv7" dist/VPNSL-1.0.6-armeabi-v7a.apk
-          cp "$x86" dist/VPNSL-1.0.6-x86_64.apk
-          cp "$universal" dist/VPNSL-1.0.6-universal.apk
+          cp "$arm64" dist/VPNSL-1.0.7-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.7-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.7-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.7-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.6-apks
+          name: VPNSL-1.0.7-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release 1.0.6
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.6')
+      - name: Publish GitHub Release 1.0.7
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.7')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           cat > /tmp/release-notes.md <<'EOF'
-          VPNSL 1.0.6
+          VPNSL 1.0.7
 
-          База: рабочая VPNSL 1.0.5.
+          База маршрутизации: точная рабочая VPNSL 1.0.5.
 
           Изменения:
-          - удалён взаимоисключающий режим «Приложения ИЛИ Маршруты»;
-          - выбранные приложения теперь задают область полного туннелирования через VPNSL;
-          - IP/CIDR-профили работают одновременно и могут делать адресные исключения в мобильную сеть; более точный префикс имеет приоритет;
-          - если приложения не выбраны, сохранено поведение 1.0.5: IP/CIDR-маршруты применяются глобально, мобильная сеть остаётся маршрутом по умолчанию;
-          - импорт файлов, ручные адреса, BAT-экспорт и генератор по домену сохранены;
-          - добавлены unit tests нового комбинированного алгоритма;
-          - добавлена собственная адаптивная иконка VPNSL;
-          - сохранены mobile-only, три ABI и universal APK, совместимость с CSQTT 2.1.9 / WIRE-3.
+          - полностью удалён экспериментальный combined-routing патч 1.0.6;
+          - восстановлена проверенная маршрутизация IP/CIDR из загружаемых файлов;
+          - восстановлены ручные IP/CIDR, импорт BAT/TXT/LIST, экспорт BAT и генератор по домену;
+          - сохранена маршрутизация выбранных приложений из 1.0.5;
+          - добавлен новый промо-стиль экрана маршрутизации: крупная статусная карточка, mobile-only индикатор и компактные режимы;
+          - сохранена фирменная адаптивная иконка VPNSL;
+          - пройдены Android unit tests, сборка трёх ABI и проверка universal APK.
+
+          Примечание: Android VpnService применяет фильтр приложений ко всему VPN-интерфейсу. Поэтому текущий движок не может корректно выразить правило OR «весь трафик выбранных приложений + отдельные IP для всех остальных приложений» без отдельного userspace packet classifier/forwarder. В 1.0.7 приоритет отдан восстановлению надёжной логики 1.0.5 вместо некорректного поведения 1.0.6.
           EOF
 
-          if gh release view v1.0.6 >/dev/null 2>&1; then
-            gh release upload v1.0.6 dist/VPNSL-1.0.6-*.apk dist/SHA256SUMS.txt --clobber
-            gh release edit v1.0.6 --title "VPNSL 1.0.6" --notes-file /tmp/release-notes.md
+          if gh release view v1.0.7 >/dev/null 2>&1; then
+            gh release upload v1.0.7 dist/VPNSL-1.0.7-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.7 --title "VPNSL 1.0.7" --notes-file /tmp/release-notes.md
           else
-            gh release create v1.0.6 \
-              dist/VPNSL-1.0.6-*.apk \
+            gh release create v1.0.7 \
+              dist/VPNSL-1.0.7-*.apk \
               dist/SHA256SUMS.txt \
               --target "$GITHUB_SHA" \
-              --title "VPNSL 1.0.6" \
+              --title "VPNSL 1.0.7" \
               --notes-file /tmp/release-notes.md
           fi
