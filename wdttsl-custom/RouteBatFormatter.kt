@@ -5,6 +5,8 @@
 package com.csqtt.client.routing
 
 object RouteBatFormatter {
+    private const val SITE_ROUTE_PREFIX = 24
+
     fun cidrToRouteCommand(cidr: String): String {
         val parts = cidr.trim().split('/', limit = 2)
         require(parts.size == 2) { "CIDR prefix is required: $cidr" }
@@ -36,7 +38,9 @@ object RouteBatFormatter {
     fun buildSiteRoutesFile(host: String, ipv4: List<String>): String = buildString {
         appendLine("REM VPNSL route file for ${safeComment(host)}")
         ipv4.distinct().sorted().forEach { address ->
-            appendLine(cidrToRouteCommand("$address/32"))
+            // Ready-made working route lists use a /24 mask. Keep the resolved
+            // host address in the command and apply the same 255.255.255.0 mask.
+            appendLine(cidrToRouteCommand("$address/$SITE_ROUTE_PREFIX"))
         }
     }
 
