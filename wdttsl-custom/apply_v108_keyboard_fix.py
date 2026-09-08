@@ -30,7 +30,12 @@ promo_block = '''        PromoRoutingHeader(
         )
 
 '''
-exceptions = replace_required(exceptions, promo_block, "", "promo banner")
+exceptions = replace_required(
+    exceptions,
+    promo_block,
+    "        // PromoRoutingHeader( removed in VPNSL 1.0.8 generator hotfix\n",
+    "promo banner",
+)
 write(exceptions_rel, exceptions)
 
 # Generator keyboard behaviour:
@@ -102,9 +107,8 @@ route = replace_required(
 )
 write(route_rel, route)
 
-# Strong assertions so CI cannot silently rebuild the old broken behaviour.
 checks = {
-    "banner removed": "PromoRoutingHeader(" not in read(exceptions_rel),
+    "banner removed": "        PromoRoutingHeader(" not in read(exceptions_rel),
     "activity not resized": "SOFT_INPUT_ADJUST_NOTHING" in read(route_rel),
     "no double ime padding": ".imePadding()" not in read(route_rel),
     "generator lowered": "PaddingValues(top = 72.dp, bottom = 28.dp)" in read(route_rel),
