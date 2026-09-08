@@ -1,4 +1,4 @@
-name: Build VPNSL 1.0.3 APK
+name: Build VPNSL 1.0.4 APK
 
 on:
   workflow_dispatch:
@@ -64,33 +64,37 @@ jobs:
           set -euxo pipefail
           python3 wdttsl-custom/apply_csqtts_v1.py .
 
-      - name: Apply VPNSL 1.0.3 fixes
+      - name: Apply VPNSL 1.0.4 fixes
         shell: bash
         run: |
           set -euxo pipefail
-          python3 wdttsl-custom/apply_v103.py .
+          python3 wdttsl-custom/apply_v104.py .
+          route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
           grep -F 'rootProject.name = "VPNSL"' settings.gradle.kts
-          grep -F 'versionCode = 1003' app/build.gradle.kts
-          grep -F 'versionName = "1.0.3"' app/build.gradle.kts
+          grep -F 'versionCode = 1004' app/build.gradle.kts
+          grep -F 'versionName = "1.0.4"' app/build.gradle.kts
           grep -F '<string name="app_name">VPNSL</string>' app/src/main/res/values/strings.xml
-          grep -F '1.0.3 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F '1.0.4 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
           grep -F 'RouteListsSection(Modifier.fillMaxWidth().weight(1f))' app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
-          grep -F 'LazyColumn(' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          grep -F 'itemsIndexed(' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          grep -F 'HorizontalDivider(' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          grep -F 'Switch(' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          grep -F 'Сеть: ${targetName(profile.target)}' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          grep -F 'persist(listOf(profile) + profiles)' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'LazyColumn(' "$route"
+          grep -F 'HorizontalDivider(' "$route"
+          grep -F 'Switch(' "$route"
+          grep -F 'AlertDialog(' "$route"
+          grep -F 'RadioButton(' "$route"
+          grep -F '.clickable { targetDialogProfileId = profile.id }' "$route"
+          grep -F '.clickable { showManualTargetDialog = true }' "$route"
+          grep -F 'Сеть: ${targetName(profile.target)}' "$route"
+          grep -F 'persist(listOf(profile) + profiles)' "$route"
           grep -F 'if (selectedTab == 3) return@pointerInput' app/src/main/java/com/csqtt/client/MainActivity.kt
-          if grep -Eq '(^|[^A-Za-z])Card\(' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt; then
-            echo 'Per-route Card remains in flat list UI' >&2
+          if grep -Eq '(^|[^A-Za-z])Card\(' "$route"; then
+            echo 'Per-route Card remains in compact list UI' >&2
             exit 1
           fi
-          if grep -F 'import androidx.compose.material3.Card' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt; then
-            echo 'Card import remains in flat list UI' >&2
+          if grep -F 'CsqttSegmentedControl' "$route"; then
+            echo 'Large segmented network selector remains in route UI' >&2
             exit 1
           fi
-          if grep -Eq 'InetAddress|normalizeWebsiteHost|resolveWebsiteIpv4|Добавить сайт вручную' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt; then
+          if grep -Eq 'InetAddress|normalizeWebsiteHost|resolveWebsiteIpv4|Добавить сайт вручную' "$route"; then
             echo 'Domain/DNS routing code remains in RouteListsSection' >&2
             exit 1
           fi
@@ -111,7 +115,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.3-gradle-diagnostics
+          name: VPNSL-1.0.4-gradle-diagnostics
           path: |
             gradle-test.log
             app/src/main/java/com/csqtt/client/MainActivity.kt
@@ -181,48 +185,47 @@ jobs:
           x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
-          cp "$arm64" dist/VPNSL-1.0.3-arm64-v8a.apk
-          cp "$armv7" dist/VPNSL-1.0.3-armeabi-v7a.apk
-          cp "$x86" dist/VPNSL-1.0.3-x86_64.apk
-          cp "$universal" dist/VPNSL-1.0.3-universal.apk
+          cp "$arm64" dist/VPNSL-1.0.4-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.4-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.4-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.4-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.3-apks
+          name: VPNSL-1.0.4-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release 1.0.3
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.3')
+      - name: Publish GitHub Release 1.0.4
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.4')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           cat > /tmp/release-notes.md <<'EOF'
-          VPNSL 1.0.3
+          VPNSL 1.0.4
 
           Изменения:
-          - список маршрутов переделан в компактный плоский список без отдельных овальных Card-контейнеров;
-          - записи разделяются тонкой линией и занимают всю полезную ширину;
-          - имя списка/IPv4, количество маршрутов и текущая сеть отображаются без обрезания контейнером;
-          - справа сохранены переключатель активности и удаление;
-          - ниже каждой записи сохранён выбор «Мобильная сеть / VPNSL»;
-          - ручные IPv4/CIDR, импорт файлов, включение/выключение, скроллинг и исправление свайпа из 1.0.2 сохранены;
+          - убраны большие кнопки выбора сети из каждой записи маршрута;
+          - строка «Сеть: ...» теперь нажимаемая и открывает компактное окно выбора «Мобильная сеть / VPNSL»;
+          - в окне текущая сеть отмечается радиокнопкой;
+          - для нового ручного IPv4/CIDR выбор сети работает тем же компактным способом;
+          - сохранены плоский список, переключатель активности, удаление, импорт файлов и исправленный вертикальный скроллинг;
           - логика маршрутизации и совместимость с сервером не изменялись.
           EOF
 
-          if gh release view v1.0.3 >/dev/null 2>&1; then
-            gh release upload v1.0.3 dist/VPNSL-1.0.3-*.apk dist/SHA256SUMS.txt --clobber
-            gh release edit v1.0.3 --title "VPNSL 1.0.3" --notes-file /tmp/release-notes.md
+          if gh release view v1.0.4 >/dev/null 2>&1; then
+            gh release upload v1.0.4 dist/VPNSL-1.0.4-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.4 --title "VPNSL 1.0.4" --notes-file /tmp/release-notes.md
           else
-            gh release create v1.0.3 \
-              dist/VPNSL-1.0.3-*.apk \
+            gh release create v1.0.4 \
+              dist/VPNSL-1.0.4-*.apk \
               dist/SHA256SUMS.txt \
               --target "$GITHUB_SHA" \
-              --title "VPNSL 1.0.3" \
+              --title "VPNSL 1.0.4" \
               --notes-file /tmp/release-notes.md
           fi
