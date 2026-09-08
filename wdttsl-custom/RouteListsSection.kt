@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -400,8 +401,11 @@ fun RouteListsSection(modifier: Modifier = Modifier) {
 
             RouteSubTab.GENERATOR -> {
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .imePadding(),
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp),
                 ) {
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
