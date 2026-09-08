@@ -1,4 +1,4 @@
-name: Build WDTTSL APK
+name: Build CSQTTS 1.0 APK
 
 on:
   workflow_dispatch:
@@ -60,17 +60,28 @@ jobs:
           grep -F 'targetSdk = 37' app/build.gradle.kts
           test -z "$(find app/src/main/res -type f -name '*.wdttsl.bak' -print -quit)"
 
-      - name: Fix generated WDTTSL Kotlin compatibility
+      - name: Apply CSQTTS 1.0 customization
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 wdttsl-custom/apply_csqtts_v1.py .
+          grep -F 'rootProject.name = "CSQTTS"' settings.gradle.kts
+          grep -F 'versionName = "1.0"' app/build.gradle.kts
+          grep -F '<string name="app_name">CSQTTS</string>' app/src/main/res/values/strings.xml
+          grep -F '1.0 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'Добавить сайт вручную' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          grep -F 'https://github.com/Nakortanax/WDTTSL' app/src/main/java/com/csqtt/client/Constants.kt
+          if grep -Fq 'GitHub профиль amurcanov' app/src/main/java/com/csqtt/client/ui/InfoTab.kt; then
+            echo 'Old developer profile remains in InfoTab' >&2
+            exit 1
+          fi
+
+      - name: Fix generated routing integration compatibility
         shell: bash
         run: |
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
-          route = Path('app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt')
-          route_text = route.read_text(encoding='utf-8')
-          route_text = route_text.replace('import androidx.compose.foundation.layout.weight\n', '')
-          route.write_text(route_text, encoding='utf-8')
 
           exceptions = Path('app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt')
           text = exceptions.read_text(encoding='utf-8')
@@ -117,8 +128,8 @@ jobs:
 
           echo '===== ExceptionsTab route/app split ====='
           nl -ba app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt | sed -n '238,335p'
-          echo '===== RouteListsSection imports ====='
-          nl -ba app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt | sed -n '1,45p'
+          echo '===== CSQTTS RouteListsSection ====='
+          nl -ba app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt | sed -n '1,220p'
 
       - name: Run Android unit tests
         id: android_tests
@@ -136,11 +147,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: WDTTSL-gradle-diagnostics
+          name: CSQTTS-1.0-gradle-diagnostics
           path: |
             gradle-test.log
             app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
             app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+            app/src/main/java/com/csqtt/client/ui/CsqttsInfoHeroCard.kt
+            app/src/main/java/com/csqtt/client/ui/InfoTab.kt
+            app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+            app/src/main/java/com/csqtt/client/Constants.kt
             app/src/main/java/com/csqtt/client/TunVpnService.kt
           if-no-files-found: ignore
           retention-days: 7
@@ -205,6 +220,16 @@ jobs:
             file "/tmp/libclient-$abi.so"
           done
 
+      - name: Verify CSQTTS branding in build inputs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -F 'versionName = "1.0"' app/build.gradle.kts
+          grep -F '<string name="app_name">CSQTTS</string>' app/src/main/res/values/strings.xml
+          grep -F 'text = "CSQTTS"' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'text = "1.0 by Sazhaev-IA"' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'Добавить сайт вручную' app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+
       - name: Prepare APK artifacts
         shell: bash
         run: |
@@ -213,13 +238,13 @@ jobs:
           find app/build/outputs/apk/debug -type f -name '*.apk' -exec cp {} dist/ \;
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$universal"
-          cp "$universal" dist/WDTTSL-universal-debug.apk
+          cp "$universal" dist/CSQTTS-1.0-universal-debug.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: WDTTSL-debug-apks
+          name: CSQTTS-1.0-debug-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
