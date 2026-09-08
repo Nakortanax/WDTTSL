@@ -78,13 +78,12 @@ jobs:
           set -euxo pipefail
           python3 wdttsl-custom/apply_v107.py .
           route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
-          exceptions=app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
           grep -F 'versionName = "1.0.7"' app/build.gradle.kts
-          ! grep -F 'PromoRoutingHeader(' "$exceptions"
-          grep -F 'val imeVisible = imeBottomPx > 0' "$route"
-          grep -F '.padding(bottom = imeBottomDp + 12.dp)' "$route"
+          grep -F 'Stable single layout' "$route"
           grep -F 'Spacer(modifier = Modifier.weight(1f))' "$route"
           ! grep -F 'imePadding' "$route"
+          ! grep -F 'imeVisible' "$route"
+          ! grep -F 'WindowInsets.ime' "$route"
 
       - name: Apply VPNSL 1.0.8 rectangular UI
         shell: bash
@@ -114,9 +113,11 @@ jobs:
           grep -F 'IP-адрес или подсеть' "$route"
           grep -F 'Выгрузить все маршруты (.bat)' "$route"
           grep -F 'InetAddress.getAllByName(host)' "$route"
-          grep -F 'val imeVisible = imeBottomPx > 0' "$route"
-          grep -F '.padding(bottom = imeBottomDp + 12.dp)' "$route"
+          grep -F 'Stable single layout' "$route"
+          grep -F 'Spacer(modifier = Modifier.weight(1f))' "$route"
           ! grep -F 'imePadding' "$route"
+          ! grep -F 'imeVisible' "$route"
+          ! grep -F 'WindowInsets.ime' "$route"
           grep -F 'M54,17 L83,28' app/src/main/res/drawable/ic_launcher_foreground.xml
 
       - name: Run Android unit tests
@@ -236,13 +237,11 @@ jobs:
           База маршрутизации: рабочая VPNSL 1.0.7 / точная логика 1.0.5.
 
           Изменения интерфейса:
-          - полностью убран выраженный круглый/pill-стиль основных элементов;
-          - нижняя навигация переделана по референсу: отдельная синяя прямоугольная плашка под иконкой активной вкладки, подпись расположена ниже;
-          - глобальные радиусы карточек и контролов уменьшены до 6–12 dp;
-          - на экране подключения добавлена отдельная широкая прямоугольная кнопка «Подключить / Отключить»;
-          - логотип подключения уменьшен и используется как статусный элемент;
-          - в генераторе при открытой клавиатуре поле ввода выводится в отдельной нижней раскладке без LazyColumn и располагается непосредственно над клавиатурой;
-          - убрана двойная IME-компенсация, из-за которой поле ввода уходило вверх за видимую область;
+          - прямоугольный стиль интерфейса и нижней навигации сохранён;
+          - исправлено поведение генератора при открытии клавиатуры;
+          - поле «Имя сайта» остаётся тем же Compose-элементом и не теряет фокус;
+          - генератор больше не использует LazyColumn, поэтому нет второго автоматического подъёма поля после системного adjustResize;
+          - imePadding, IME-условная смена раскладки и ручная компенсация высоты клавиатуры не используются;
           - маршрутизация приложений, IP/CIDR и файлов не менялась относительно 1.0.7;
           - пройдены Android unit tests, три ABI и проверка universal APK.
           EOF
