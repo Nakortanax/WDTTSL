@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 amurcanov
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-// CSQTTS derivative UI by Sazhaev-IA.
+// VPNSL derivative UI by Sazhaev-IA.
 
 package com.csqtt.client.ui
 
@@ -24,7 +24,7 @@ fun CsqttsInfoHeroCard(currentVersion: String) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "CSQTTS",
+                text = "VPNSL",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
