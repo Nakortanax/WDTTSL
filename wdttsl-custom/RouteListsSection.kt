@@ -12,19 +12,22 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -69,8 +72,6 @@ fun RouteListsSection(modifier: Modifier = Modifier) {
             return
         }
 
-        // Keenetic-style destination route: a plain IPv4 address is a host route (/32),
-        // CIDR adds the whole prefix. No DNS lookup is performed here.
         val normalizedInput = if ('/' in raw) raw else "$raw/32"
         val route = Ipv4Cidr.parse(normalizedInput)
         if (route == null) {
@@ -86,9 +87,9 @@ fun RouteListsSection(modifier: Modifier = Modifier) {
             target = manualTarget,
             routes = listOf(route),
         )
-        persist(profiles + profile)
+        persist(listOf(profile) + profiles)
         routeInput = ""
-        status = "Маршрут $canonicalRoute → ${targetName(manualTarget)} добавлен"
+        status = "Добавлен $canonicalRoute → ${targetName(manualTarget)}"
     }
 
     val picker = rememberLauncherForActivityResult(
@@ -119,88 +120,90 @@ fun RouteListsSection(modifier: Modifier = Modifier) {
         if (result.routes.isNotEmpty()) TunnelManager.reloadVpn()
     }
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
     ) {
-        OutlinedTextField(
-            value = routeInput,
-            onValueChange = { routeInput = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("IP-адрес или подсеть") },
-            placeholder = { Text("104.18.29.234 или 104.18.29.0/24") },
-        )
+        item(key = "manual-input") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = routeInput,
+                    onValueChange = { routeInput = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("IP-адрес или подсеть") },
+                    placeholder = { Text("104.18.29.234 или 104.18.29.0/24") },
+                )
 
-        Text(
-            "Интерфейс для нового маршрута",
-            style = MaterialTheme.typography.labelLarge,
-        )
-        CsqttSegmentedControl(
-            options = listOf(
-                RouteTarget.MOBILE to "Мобильная сеть",
-                RouteTarget.WDTTSL to "VPNSL",
-            ),
-            selected = manualTarget,
-            onSelected = { manualTarget = it },
-        )
+                Text("Сеть для нового маршрута", style = MaterialTheme.typography.labelLarge)
+                CsqttSegmentedControl(
+                    options = listOf(
+                        RouteTarget.MOBILE to "Мобильная сеть",
+                        RouteTarget.WDTTSL to "VPNSL",
+                    ),
+                    selected = manualTarget,
+                    onSelected = { manualTarget = it },
+                )
 
-        Button(
-            onClick = ::addManualRoute,
-            enabled = routeInput.isNotBlank(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Outlined.Add, contentDescription = null)
-            Text(" Добавить маршрут")
+                Button(
+                    onClick = ::addManualRoute,
+                    enabled = routeInput.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = null)
+                    Text(" Добавить маршрут")
+                }
+
+                Text(
+                    "Обычный IPv4 автоматически становится /32. DNS и доменные имена не используются. Каждый маршрут можно отключить, не удаляя из списка, и отдельно выбрать для него Мобильную сеть или VPNSL.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+
+                Button(
+                    onClick = { picker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.UploadFile, contentDescription = null)
+                    Text(" Загрузить список маршрутов")
+                }
+
+                status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+
+                if (profiles.isEmpty()) {
+                    Text(
+                        "Маршрутов пока нет. Добавьте IPv4/CIDR вручную или загрузите .bat, .txt/.list.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
 
-        Text(
-            "Логика как у статического маршрута Keenetic: указывается назначение IPv4/CIDR и интерфейс. Обычный IP автоматически становится /32. DNS и имена сайтов не используются. Более специфичный префикс имеет приоритет; при одинаковом префиксе действует последний добавленный маршрут.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        Button(
-            onClick = { picker.launch(arrayOf("*/*")) },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Outlined.UploadFile, contentDescription = null)
-            Text(" Загрузить список маршрутов")
-        }
-
-        status?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall)
-        }
-
-        if (profiles.isEmpty()) {
-            Text(
-                "Добавьте IPv4/CIDR вручную или загрузите .bat, .txt/.list. Для ручной записи заранее выбирается Мобильная сеть или VPNSL.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-
-        profiles.forEach { profile ->
+        items(
+            items = profiles,
+            key = { it.id },
+            contentType = { "route-profile" },
+        ) { profile ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Checkbox(
-                            checked = profile.enabled,
-                            onCheckedChange = { enabled ->
-                                persist(profiles.map {
-                                    if (it.id == profile.id) it.copy(enabled = enabled) else it
-                                })
-                            },
-                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(profile.name, style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "${profile.routes.size} маршрутов",
+                                if (profile.routes.size == 1) "1 маршрут" else "${profile.routes.size} маршрутов",
                                 style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "Сеть: ${targetName(profile.target)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
                             )
                         }
                         IconButton(onClick = {
@@ -210,6 +213,22 @@ fun RouteListsSection(modifier: Modifier = Modifier) {
                         }) {
                             Icon(Icons.Outlined.Delete, contentDescription = "Удалить")
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(if (profile.enabled) "Активен" else "Выключен", style = MaterialTheme.typography.labelLarge)
+                        Switch(
+                            checked = profile.enabled,
+                            onCheckedChange = { enabled ->
+                                persist(profiles.map {
+                                    if (it.id == profile.id) it.copy(enabled = enabled) else it
+                                })
+                            },
+                        )
                     }
 
                     CsqttSegmentedControl(
