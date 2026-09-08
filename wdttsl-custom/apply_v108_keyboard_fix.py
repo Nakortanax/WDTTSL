@@ -31,6 +31,22 @@ route_rel = "app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt"
 route = read(route_rel)
 route = route.replace("import androidx.compose.foundation.layout.imePadding\n", "")
 
+# BAT files must stay BAT files. text/plain makes some Android providers/file
+# managers append .txt to a requested *.bat name. Use a neutral binary MIME so
+# DISPLAY_NAME / CreateDocument keep the exact .bat suffix.
+route = replace_required(
+    route,
+    'ActivityResultContracts.CreateDocument("text/plain")',
+    'ActivityResultContracts.CreateDocument("application/octet-stream")',
+    "BAT CreateDocument MIME",
+)
+route = replace_required(
+    route,
+    'put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")',
+    'put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")',
+    "BAT Downloads MIME",
+)
+
 if "import androidx.compose.foundation.layout.Spacer\n" not in route:
     route = replace_required(
         route,
@@ -61,7 +77,7 @@ branch = '''            RouteSubTab.GENERATOR -> {
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        "Введите домен или URL. VPNSL найдёт текущие IPv4-адреса (A-записи) и сформирует отдельный .bat с маршрутами /32.",
+                        "Введите домен или URL. VPNSL найдёт текущие IPv4-адреса (A-записи) и сформирует отдельный .bat с маршрутами /24 (маска 255.255.255.0), как в рабочих готовых списках.",
                         style = MaterialTheme.typography.bodySmall,
                     )
 
@@ -109,7 +125,7 @@ branch = '''            RouteSubTab.GENERATOR -> {
                                     } else {
                                         generatedHost = host
                                         generatedIpv4 = addresses
-                                        generatorStatus = "Найдено IPv4: ${addresses.size}. BAT готов к сохранению."
+                                        generatorStatus = "Найдено IPv4: ${addresses.size}. BAT /24 готов к сохранению."
                                     }
                                 }.onFailure { error ->
                                     generatorStatus = "Ошибка DNS: ${error.message ?: error.javaClass.simpleName}"
@@ -129,7 +145,7 @@ branch = '''            RouteSubTab.GENERATOR -> {
                             fontWeight = FontWeight.SemiBold,
                         )
                         generatedIpv4.forEach { address ->
-                            Text("• $address/32", style = MaterialTheme.typography.bodyMedium)
+                            Text("• $address/24", style = MaterialTheme.typography.bodyMedium)
                         }
 
                         Button(
@@ -162,10 +178,15 @@ checks = {
     "generator no LazyColumn auto-scroll": "RouteSubTab.GENERATOR -> {\n                // Stable single layout" in read(route_rel),
     "field kept low": "Spacer(modifier = Modifier.weight(1f))" in read(route_rel),
     "generator DNS intact": "InetAddress.getAllByName(host)" in read(route_rel),
+    "site mask shown as /24": 'Text("• $address/24"' in read(route_rel),
+    "BAT MIME preserves extension": 'CreateDocument("application/octet-stream")' in read(route_rel)
+        and 'MIME_TYPE, "application/octet-stream"' in read(route_rel),
+    "no text/plain save MIME": 'CreateDocument("text/plain")' not in read(route_rel)
+        and 'MIME_TYPE, "text/plain"' not in read(route_rel),
     "file import intact": "store.importProfile(name, text, RouteTarget.WDTTSL)" in read(route_rel),
 }
 failed = [name for name, ok in checks.items() if not ok]
 if failed:
     raise SystemExit("VPNSL 1.0.8 keyboard fix verification failed: " + ", ".join(failed))
 
-print("VPNSL 1.0.8: single adjustResize movement; generator focus preserved")
+print("VPNSL 1.0.8: generator uses working /24 mask; BAT extension preserved; keyboard fix retained")
