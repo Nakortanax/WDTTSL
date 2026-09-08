@@ -18,10 +18,11 @@ def write(rel, text):
 
 def replace_required(text, old, new, label):
     if old not in text:
-        raise SystemExit(f"CSQTTS customization anchor missing: {label}")
+        raise SystemExit(f"VPNSL customization anchor missing: {label}")
     return text.replace(old, new, 1)
 
-# Replace generated route-list UI with CSQTTS v1 UI.
+
+# Replace generated route-list UI with VPNSL 1.0.1 UI.
 route_src = CUSTOM / "RouteListsSection.kt"
 route_dst = ROOT / "app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt"
 if not route_src.is_file():
@@ -34,38 +35,40 @@ if not hero_src.is_file():
     raise SystemExit("wdttsl-custom/CsqttsInfoHeroCard.kt is missing")
 shutil.copyfile(hero_src, hero_dst)
 
-# Project/app identity shown to the user.
+# Project/app identity shown to the user. Keep applicationId unchanged so existing
+# installations keep their app data/device identity when Android accepts the update signature.
 settings = read("settings.gradle.kts")
-settings = re.sub(r'rootProject\.name\s*=\s*"[^"]+"', 'rootProject.name = "CSQTTS"', settings, count=1)
+settings = re.sub(r'rootProject\.name\s*=\s*"[^"]+"', 'rootProject.name = "VPNSL"', settings, count=1)
 write("settings.gradle.kts", settings)
 
 gradle = read("app/build.gradle.kts")
-gradle = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 1000', gradle, count=1)
-gradle = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0"', gradle, count=1)
+gradle = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 1001', gradle, count=1)
+gradle = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.1"', gradle, count=1)
 write("app/build.gradle.kts", gradle)
 
 strings = read("app/src/main/res/values/strings.xml")
-strings = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">CSQTTS</string>', strings, count=1)
+strings = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">VPNSL</string>', strings, count=1)
 write("app/src/main/res/values/strings.xml", strings)
 
 manifest = read("app/src/main/AndroidManifest.xml")
-manifest = manifest.replace('android:label="WDTTSL"', 'android:label="CSQTTS"')
-manifest = manifest.replace('android:label="CSQTT"', 'android:label="CSQTTS"')
+manifest = manifest.replace('android:label="WDTTSL"', 'android:label="VPNSL"')
+manifest = manifest.replace('android:label="CSQTT"', 'android:label="VPNSL"')
+manifest = manifest.replace('android:label="CSQTTS"', 'android:label="VPNSL"')
 write("app/src/main/AndroidManifest.xml", manifest)
 
-# Header: textual branding instead of original CSQTT/amurcanov image badges.
+# Header: textual VPNSL branding instead of original image badges.
 screen = read("app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt")
 old_logo = '''                Icon(\n                    painter = painterResource(id = R.drawable.ic_csqtt_logo),\n                    contentDescription = "CSQTT",\n                    tint = Color.Unspecified,\n                    modifier = Modifier.height(26.dp)\n                )'''
-new_logo = '''                Text(\n                    text = "CSQTTS",\n                    style = MaterialTheme.typography.titleLarge,\n                    fontWeight = FontWeight.Bold,\n                    color = MaterialTheme.colorScheme.primary,\n                )'''
+new_logo = '''                Text(\n                    text = "VPNSL",\n                    style = MaterialTheme.typography.titleLarge,\n                    fontWeight = FontWeight.Bold,\n                    color = MaterialTheme.colorScheme.primary,\n                )'''
 screen = replace_required(screen, old_logo, new_logo, "CsqttScreen logo")
 old_version = '''                    Icon(\n                        painter = painterResource(id = R.drawable.ic_v219_by_amurcanov),\n                        contentDescription = "v2.1.9 by amurcanov",\n                        tint = Color.Unspecified,\n                        modifier = Modifier.height(19.dp)\n                    )'''
-new_version = '''                    Text(\n                        text = "1.0 by Sazhaev-IA",\n                        style = MaterialTheme.typography.labelLarge,\n                        color = MaterialTheme.colorScheme.onSurfaceVariant,\n                    )'''
+new_version = '''                    Text(\n                        text = "1.0.1 by Sazhaev-IA",\n                        style = MaterialTheme.typography.labelLarge,\n                        color = MaterialTheme.colorScheme.onSurfaceVariant,\n                    )'''
 screen = replace_required(screen, old_version, new_version, "CsqttScreen version badge")
 write("app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt", screen)
 
 # All public/update GitHub links point to Nakortanax/WDTTSL.
 constants = read("app/src/main/java/com/csqtt/client/Constants.kt")
-constants = constants.replace('const val APP_NAME = "CSQTT"', 'const val APP_NAME = "CSQTTS"')
+constants = constants.replace('const val APP_NAME = "CSQTT"', 'const val APP_NAME = "VPNSL"')
 constants = constants.replace('https://api.github.com/repos/amurcanov/csqtt/releases?per_page=30', 'https://api.github.com/repos/Nakortanax/WDTTSL/releases?per_page=30')
 constants = constants.replace('https://api.github.com/repos/amurcanov/csqtt/releases/latest', 'https://api.github.com/repos/Nakortanax/WDTTSL/releases/latest')
 constants = constants.replace('https://github.com/amurcanov/csqtt/releases/latest', 'https://github.com/Nakortanax/WDTTSL/releases/latest')
@@ -86,7 +89,7 @@ hero_pattern = re.compile(
 )
 info, count = hero_pattern.subn('\n            CsqttsInfoHeroCard(currentVersion = currentVersion)', info, count=1)
 if count != 1:
-    raise SystemExit("CSQTTS customization anchor missing: InfoHeroCard call")
+    raise SystemExit("VPNSL customization anchor missing: InfoHeroCard call")
 info = info.replace('    var showCryptoDialog by remember { mutableStateOf(false) }\n', '')
 info = re.sub(
     r'''\n\s*if \(showCryptoDialog\) \{\n\s*CryptoDonateDialog\(onDismiss = \{ showCryptoDialog = false \}\)\n\s*\}\n''',
@@ -94,17 +97,16 @@ info = re.sub(
     info,
     count=1,
 )
-info = info.replace('title = "Автор Android-версии"', 'title = "Автор CSQTTS"')
+info = info.replace('title = "Автор Android-версии"', 'title = "Автор VPNSL"')
 info = info.replace('subtitle = "GitHub профиль amurcanov"', 'subtitle = "Sazhaev-IA · GitHub Nakortanax"')
-info = info.replace('title = "Репозиторий CSQTT"', 'title = "Репозиторий CSQTTS"')
-info = info.replace('ClipData.newPlainText("CSQTT Report", buildSupportReport())', 'ClipData.newPlainText("CSQTTS Report", buildSupportReport())')
+info = info.replace('title = "Репозиторий CSQTT"', 'title = "Репозиторий VPNSL"')
+info = info.replace('ClipData.newPlainText("CSQTT Report", buildSupportReport())', 'ClipData.newPlainText("VPNSL Report", buildSupportReport())')
 write("app/src/main/java/com/csqtt/client/ui/InfoTab.kt", info)
 
-# Update HTTP identity and use only Releases from the CSQTTS fork.
-# A fork can inherit upstream git tags (for example v2.1.9); those tags must not
-# be treated as CSQTTS application releases after resetting the app version to 1.0.
+# Update HTTP identity and use only Releases from the fork. A fork can inherit
+# upstream tags such as v2.1.9, which are not VPNSL releases.
 update = read("app/src/main/java/com/csqtt/client/AppUpdate.kt")
-update = update.replace('"CSQTTAndroid/${BuildConfig.VERSION_NAME}"', '"CSQTTSAndroid/${BuildConfig.VERSION_NAME}"')
+update = update.replace('"CSQTTAndroid/${BuildConfig.VERSION_NAME}"', '"VPNSLAndroid/${BuildConfig.VERSION_NAME}"')
 old_fetch = """suspend fun fetchLatestReleaseInfo(localVersion: String? = null): AppReleaseInfo? = withContext(Dispatchers.IO) {
     val latestRelease = fetchReleaseFromLatestWebRedirect()
         ?: fetchReleaseFromLatestEndpoint()
@@ -123,25 +125,36 @@ new_fetch = """suspend fun fetchLatestReleaseInfo(localVersion: String? = null):
         ?: fetchReleaseFromLatestEndpoint()
         ?: fetchLatestStableReleaseFromList()
 }"""
-update = replace_required(update, old_fetch, new_fetch, "CSQTTS releases-only updater")
+update = replace_required(update, old_fetch, new_fetch, "VPNSL releases-only updater")
 write("app/src/main/java/com/csqtt/client/AppUpdate.kt", update)
 
-# Visible VPN session name; protocol/event constants remain CSQTT for server compatibility.
+# Visible VPN/session/notification branding. Protocol/event constants remain CSQTT
+# because the server wire protocol must stay compatible with CSQTT-WIRE-3.
 tun = read("app/src/main/java/com/csqtt/client/TunVpnService.kt")
-tun = tun.replace('.setSession("WDTTSL")', '.setSession("CSQTTS")')
-tun = tun.replace('.setSession("CSQTT")', '.setSession("CSQTTS")')
+tun = tun.replace('.setSession("WDTTSL")', '.setSession("VPNSL")')
+tun = tun.replace('.setSession("CSQTT")', '.setSession("VPNSL")')
+tun = tun.replace('.setSession("CSQTTS")', '.setSession("VPNSL")')
 write("app/src/main/java/com/csqtt/client/TunVpnService.kt", tun)
+
+service = read("app/src/main/java/com/csqtt/client/TunnelService.kt")
+service = service.replace('"CSQTT Туннель"', '"VPNSL Туннель"')
+service = service.replace('.setContentTitle("CSQTT")', '.setContentTitle("VPNSL")')
+service = service.replace('"WDTTSL"', '"VPNSL"')
+service = service.replace('"CSQTTS"', '"VPNSL"')
+write("app/src/main/java/com/csqtt/client/TunnelService.kt", service)
 
 # Sanity checks.
 checks = {
-    "version 1.0": 'versionName = "1.0"' in read("app/build.gradle.kts"),
-    "app name": '>CSQTTS</string>' in read("app/src/main/res/values/strings.xml"),
+    "version 1.0.1": 'versionName = "1.0.1"' in read("app/build.gradle.kts"),
+    "version code 1001": 'versionCode = 1001' in read("app/build.gradle.kts"),
+    "app name": '>VPNSL</string>' in read("app/src/main/res/values/strings.xml"),
     "github repo": 'https://github.com/Nakortanax/WDTTSL' in read("app/src/main/java/com/csqtt/client/Constants.kt"),
-    "manual website UI": 'Добавить сайт вручную' in route_dst.read_text(encoding="utf-8"),
-    "new header": '1.0 by Sazhaev-IA' in screen,
+    "manual IPv4 route UI": 'IP-адрес или подсеть' in route_dst.read_text(encoding="utf-8"),
+    "no DNS route lookup": 'InetAddress' not in route_dst.read_text(encoding="utf-8"),
+    "new header": '1.0.1 by Sazhaev-IA' in screen,
 }
 failed = [name for name, ok in checks.items() if not ok]
 if failed:
-    raise SystemExit("CSQTTS customization verification failed: " + ", ".join(failed))
+    raise SystemExit("VPNSL customization verification failed: " + ", ".join(failed))
 
-print("CSQTTS v1 customizations applied")
+print("VPNSL 1.0.1 customizations applied")
