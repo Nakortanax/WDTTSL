@@ -1,1 +1,1 @@
-VPNSL 1.0.8 generator keyboard hotfix 5: fixed CI and bottom-anchored input above IME.
+VPNSL 1.0.8 generator keyboard hotfix 6: preserve focus, remove second upward movement, use one adjustResize pass only.
