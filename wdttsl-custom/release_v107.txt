@@ -1,0 +1,3 @@
+VPNSL 1.0.7 release marker.
+Routing base: exact working 1.0.5.
+UI: promo-style routing dashboard.
