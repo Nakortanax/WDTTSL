@@ -77,8 +77,14 @@ jobs:
         run: |
           set -euxo pipefail
           python3 wdttsl-custom/apply_v107.py .
+          route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          exceptions=app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
           grep -F 'versionName = "1.0.7"' app/build.gradle.kts
-          grep -F 'PromoRoutingHeader(' app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
+          ! grep -F 'PromoRoutingHeader(' "$exceptions"
+          grep -F 'val imeVisible = imeBottomPx > 0' "$route"
+          grep -F '.padding(bottom = imeBottomDp + 12.dp)' "$route"
+          grep -F 'Spacer(modifier = Modifier.weight(1f))' "$route"
+          ! grep -F 'imePadding' "$route"
 
       - name: Apply VPNSL 1.0.8 rectangular UI
         shell: bash
@@ -108,6 +114,9 @@ jobs:
           grep -F 'IP-адрес или подсеть' "$route"
           grep -F 'Выгрузить все маршруты (.bat)' "$route"
           grep -F 'InetAddress.getAllByName(host)' "$route"
+          grep -F 'val imeVisible = imeBottomPx > 0' "$route"
+          grep -F '.padding(bottom = imeBottomDp + 12.dp)' "$route"
+          ! grep -F 'imePadding' "$route"
           grep -F 'M54,17 L83,28' app/src/main/res/drawable/ic_launcher_foreground.xml
 
       - name: Run Android unit tests
@@ -232,7 +241,8 @@ jobs:
           - глобальные радиусы карточек и контролов уменьшены до 6–12 dp;
           - на экране подключения добавлена отдельная широкая прямоугольная кнопка «Подключить / Отключить»;
           - логотип подключения уменьшен и используется как статусный элемент;
-          - прямоугольный стиль автоматически применяется к карточкам, сегментам, диалогам и большинству кнопок через общую систему Shapes;
+          - в генераторе при открытой клавиатуре поле ввода выводится в отдельной нижней раскладке без LazyColumn и располагается непосредственно над клавиатурой;
+          - убрана двойная IME-компенсация, из-за которой поле ввода уходило вверх за видимую область;
           - маршрутизация приложений, IP/CIDR и файлов не менялась относительно 1.0.7;
           - пройдены Android unit tests, три ABI и проверка universal APK.
           EOF
