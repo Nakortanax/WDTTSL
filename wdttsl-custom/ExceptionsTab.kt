@@ -43,7 +43,6 @@ import androidx.core.graphics.drawable.toBitmap
 import com.csqtt.client.R
 import com.csqtt.client.SettingsStore
 import com.csqtt.client.TunnelManager
-import com.csqtt.client.routing.RouteListStore
 import com.csqtt.client.routing.RoutingSourceMode
 import com.csqtt.client.ui.components.CsqttEmptyState
 import com.csqtt.client.ui.components.CsqttLoadingState
@@ -92,8 +91,7 @@ fun ExceptionsTab(
     var isLoading by remember { mutableStateOf(AppCache.cachedList == null) }
     var isMigrationReady by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    val routeListStore = remember { RouteListStore(context) }
-    var routingSourceMode by remember { mutableStateOf(routeListStore.routingSourceMode()) }
+    var editorMode by rememberSaveable { mutableStateOf(RoutingSourceMode.APPLICATIONS) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -180,26 +178,22 @@ fun ExceptionsTab(
             contentPadding = PaddingValues(horizontal = CsqttSpacing.Md, vertical = CsqttSpacing.Sm),
             verticalArrangement = Arrangement.spacedBy(CsqttSpacing.Sm),
         ) {
+            Text(
+                text = "Приложения и маршруты работают одновременно. Переключатель ниже меняет только редактор.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             CsqttSegmentedControl(
                 options = listOf(
                     RoutingSourceMode.APPLICATIONS to "Приложения",
                     RoutingSourceMode.ROUTE_LISTS to "Маршруты",
                 ),
-                selected = routingSourceMode,
+                selected = editorMode,
                 enabled = isMigrationReady,
-                onSelected = { mode ->
-                    if (mode == routingSourceMode) return@CsqttSegmentedControl
-                    routingSourceMode = mode
-                    routeListStore.saveRoutingSourceMode(mode)
-                    scope.launch {
-                        settingsStore.saveIsWhitelist(true)
-                        delay(150)
-                        TunnelManager.reloadVpn()
-                    }
-                },
+                onSelected = { editorMode = it },
             )
 
-            if (routingSourceMode == RoutingSourceMode.APPLICATIONS) {
+            if (editorMode == RoutingSourceMode.APPLICATIONS) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 CsqttSettingRow(
                     title = stringResource(R.string.exceptions_system_apps),
@@ -211,7 +205,7 @@ fun ExceptionsTab(
             }
         }
 
-        if (routingSourceMode == RoutingSourceMode.ROUTE_LISTS) {
+        if (editorMode == RoutingSourceMode.ROUTE_LISTS) {
             RouteListsSection(Modifier.fillMaxWidth().weight(1f))
         } else {
             OutlinedTextField(
