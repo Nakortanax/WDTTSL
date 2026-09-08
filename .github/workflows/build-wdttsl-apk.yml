@@ -1,4 +1,4 @@
-name: Build VPNSL 1.0.4 APK
+name: Build VPNSL 1.0.5 APK
 
 on:
   workflow_dispatch:
@@ -64,38 +64,43 @@ jobs:
           set -euxo pipefail
           python3 wdttsl-custom/apply_csqtts_v1.py .
 
-      - name: Apply VPNSL 1.0.4 fixes
+      - name: Apply VPNSL 1.0.5 features
         shell: bash
         run: |
           set -euxo pipefail
-          python3 wdttsl-custom/apply_v104.py .
+          python3 wdttsl-custom/apply_v105.py .
           route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          formatter=app/src/main/java/com/csqtt/client/routing/RouteBatFormatter.kt
+          test -f app/src/test/java/com/csqtt/client/routing/RouteBatFormatterTest.kt
           grep -F 'rootProject.name = "VPNSL"' settings.gradle.kts
-          grep -F 'versionCode = 1004' app/build.gradle.kts
-          grep -F 'versionName = "1.0.4"' app/build.gradle.kts
+          grep -F 'versionCode = 1005' app/build.gradle.kts
+          grep -F 'versionName = "1.0.5"' app/build.gradle.kts
           grep -F '<string name="app_name">VPNSL</string>' app/src/main/res/values/strings.xml
-          grep -F '1.0.4 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
-          grep -F 'RouteListsSection(Modifier.fillMaxWidth().weight(1f))' app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
-          grep -F 'LazyColumn(' "$route"
-          grep -F 'HorizontalDivider(' "$route"
-          grep -F 'Switch(' "$route"
+          grep -F '1.0.5 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'Подпись ресурса' "$route"
+          grep -F 'name = label' "$route"
+          grep -F 'Выгрузить все маршруты (.bat)' "$route"
+          grep -F 'RouteBatFormatter.buildAllRoutesFile(profiles)' "$route"
+          grep -F 'RouteSubTab.GENERATOR' "$route"
+          grep -F 'Генератор BAT по имени сайта' "$route"
+          grep -F 'InetAddress.getAllByName(host)' "$route"
+          grep -F 'filterIsInstance<Inet4Address>()' "$route"
+          grep -F 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' "$route"
+          grep -F 'Environment.DIRECTORY_DOWNLOADS' "$route"
+          grep -F 'RouteBatFormatter.buildSiteRoutesFile(host, generatedIpv4)' "$route"
           grep -F 'AlertDialog(' "$route"
           grep -F 'RadioButton(' "$route"
-          grep -F '.clickable { targetDialogProfileId = profile.id }' "$route"
-          grep -F '.clickable { showManualTargetDialog = true }' "$route"
-          grep -F 'Сеть: ${targetName(profile.target)}' "$route"
-          grep -F 'persist(listOf(profile) + profiles)' "$route"
+          grep -F 'Switch(' "$route"
+          grep -F 'HorizontalDivider(' "$route"
+          grep -F 'route add ${parts[0]} mask ${prefixToMask(prefix)} 0.0.0.0' "$formatter"
+          grep -F 'RouteListsSection(Modifier.fillMaxWidth().weight(1f))' app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
           grep -F 'if (selectedTab == 3) return@pointerInput' app/src/main/java/com/csqtt/client/MainActivity.kt
           if grep -Eq '(^|[^A-Za-z])Card\(' "$route"; then
-            echo 'Per-route Card remains in compact list UI' >&2
+            echo 'Per-route Card returned in 1.0.5 UI' >&2
             exit 1
           fi
           if grep -F 'CsqttSegmentedControl' "$route"; then
-            echo 'Large segmented network selector remains in route UI' >&2
-            exit 1
-          fi
-          if grep -Eq 'InetAddress|normalizeWebsiteHost|resolveWebsiteIpv4|Добавить сайт вручную' "$route"; then
-            echo 'Domain/DNS routing code remains in RouteListsSection' >&2
+            echo 'Large segmented network selector returned in 1.0.5 UI' >&2
             exit 1
           fi
 
@@ -115,12 +120,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.4-gradle-diagnostics
+          name: VPNSL-1.0.5-gradle-diagnostics
           path: |
             gradle-test.log
             app/src/main/java/com/csqtt/client/MainActivity.kt
             app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
             app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+            app/src/main/java/com/csqtt/client/routing/RouteBatFormatter.kt
+            app/src/test/java/com/csqtt/client/routing/RouteBatFormatterTest.kt
             app/src/main/java/com/csqtt/client/TunVpnService.kt
           if-no-files-found: ignore
           retention-days: 7
@@ -185,47 +192,49 @@ jobs:
           x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
-          cp "$arm64" dist/VPNSL-1.0.4-arm64-v8a.apk
-          cp "$armv7" dist/VPNSL-1.0.4-armeabi-v7a.apk
-          cp "$x86" dist/VPNSL-1.0.4-x86_64.apk
-          cp "$universal" dist/VPNSL-1.0.4-universal.apk
+          cp "$arm64" dist/VPNSL-1.0.5-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.5-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.5-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.5-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.4-apks
+          name: VPNSL-1.0.5-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release 1.0.4
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.4')
+      - name: Publish GitHub Release 1.0.5
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.5')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           cat > /tmp/release-notes.md <<'EOF'
-          VPNSL 1.0.4
+          VPNSL 1.0.5
 
           Изменения:
-          - убраны большие кнопки выбора сети из каждой записи маршрута;
-          - строка «Сеть: ...» теперь нажимаемая и открывает компактное окно выбора «Мобильная сеть / VPNSL»;
-          - в окне текущая сеть отмечается радиокнопкой;
-          - для нового ручного IPv4/CIDR выбор сети работает тем же компактным способом;
-          - сохранены плоский список, переключатель активности, удаление, импорт файлов и исправленный вертикальный скроллинг;
-          - логика маршрутизации и совместимость с сервером не изменялись.
+          - добавлен экспорт всех сохранённых IP/CIDR маршрутов в один .bat файл;
+          - BAT содержит обычные route add строки, а подпись, активность и выбранная сеть сохраняются в REM-комментариях;
+          - для ручного добавления IPv4/CIDR добавлено обязательное поле «Подпись ресурса»;
+          - в списке для одиночного маршрута отображаются и подпись, и сам IPv4/CIDR;
+          - добавлена вкладка «Генератор»: ввод домена/URL, поиск текущих IPv4 (A-записей), формирование .bat;
+          - на Android 10+ сгенерированный .bat сохраняется напрямую в папку Download, на Android 8–9 используется системный диалог сохранения;
+          - добавлены unit tests преобразования CIDR в netmask/route add и генерации BAT;
+          - сохранены компактный выбор сети, активация маршрутов, импорт файлов, mobile-only и совместимость с сервером CSQTT 2.1.9 / WIRE-3.
           EOF
 
-          if gh release view v1.0.4 >/dev/null 2>&1; then
-            gh release upload v1.0.4 dist/VPNSL-1.0.4-*.apk dist/SHA256SUMS.txt --clobber
-            gh release edit v1.0.4 --title "VPNSL 1.0.4" --notes-file /tmp/release-notes.md
+          if gh release view v1.0.5 >/dev/null 2>&1; then
+            gh release upload v1.0.5 dist/VPNSL-1.0.5-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.5 --title "VPNSL 1.0.5" --notes-file /tmp/release-notes.md
           else
-            gh release create v1.0.4 \
-              dist/VPNSL-1.0.4-*.apk \
+            gh release create v1.0.5 \
+              dist/VPNSL-1.0.5-*.apk \
               dist/SHA256SUMS.txt \
               --target "$GITHUB_SHA" \
-              --title "VPNSL 1.0.4" \
+              --title "VPNSL 1.0.5" \
               --notes-file /tmp/release-notes.md
           fi
