@@ -4,6 +4,7 @@
 package com.csqtt.client.routing
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -30,6 +31,17 @@ class RouteBatFormatterTest {
     }
 
     @Test
+    fun generatedSiteFileMatchesKnownWorkingMask() {
+        val text = RouteBatFormatter.buildSiteRoutesFile(
+            "bgdn-bpt.profiedu.ru",
+            listOf("195.19.102.233"),
+        )
+        assertTrue(text.contains("REM VPNSL route file for bgdn-bpt.profiedu.ru"))
+        assertTrue(text.contains("route add 195.19.102.233 mask 255.255.255.0 0.0.0.0"))
+        assertFalse(text.contains("route add 195.19.102.233 mask 255.255.255.255 0.0.0.0"))
+    }
+
+    @Test
     fun siteFileContainsEveryIpv4Once() {
         val text = RouteBatFormatter.buildSiteRoutesFile(
             "example.com",
@@ -38,5 +50,7 @@ class RouteBatFormatterTest {
         assertTrue(text.contains("REM VPNSL route file for example.com"))
         assertEquals(1, Regex("route add 8\\.8\\.8\\.8").findAll(text).count())
         assertEquals(1, Regex("route add 1\\.1\\.1\\.1").findAll(text).count())
+        assertTrue(text.contains("route add 8.8.8.8 mask 255.255.255.0 0.0.0.0"))
+        assertTrue(text.contains("route add 1.1.1.1 mask 255.255.255.0 0.0.0.0"))
     }
 }
