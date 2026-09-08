@@ -1,0 +1,3 @@
+VPNSL 1.0.8 release marker
+UI: rectangular navigation, controls and connection action
+Routing: unchanged from VPNSL 1.0.7 / exact 1.0.5 logic
