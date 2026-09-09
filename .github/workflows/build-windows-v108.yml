@@ -58,6 +58,26 @@ jobs:
           Expand-Archive wintun.zip -DestinationPath .wintun -Force
           if (-not (Test-Path .wintun/wintun/bin/amd64/wintun.dll)) { throw 'wintun.dll was not extracted' }
 
+      - name: Extract exact server assets from VPNSL Android 1.0.8
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $apkUrl = 'https://github.com/Nakortanax/WDTTSL/releases/download/v1.0.8/VPNSL-1.0.8-universal.apk'
+          Invoke-WebRequest -Uri $apkUrl -OutFile vpnsl-v108.apk
+          $hash = (Get-FileHash vpnsl-v108.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '1e3c158d0b985a5fe171a50263df0f7932a47e69c66aa6f4b2597c7f19e59310') {
+            throw "VPNSL 1.0.8 APK checksum mismatch: $hash"
+          }
+          Copy-Item vpnsl-v108.apk vpnsl-v108.zip
+          Expand-Archive vpnsl-v108.zip -DestinationPath .v108-apk -Force
+          New-Item -ItemType Directory -Force -Path build/server-assets | Out-Null
+          foreach ($name in @('deploy.sh','csqtt-linux-amd64','csqtt-linux-arm64','csqtt-linux-armv7')) {
+            $source = Join-Path '.v108-apk/assets' $name
+            if (-not (Test-Path $source)) { throw "Server asset missing in VPNSL 1.0.8 APK: $name" }
+            Copy-Item $source build/server-assets/$name
+          }
+          Get-ChildItem build/server-assets | Select-Object Name,Length
+
       - name: Build Windows UI
         shell: pwsh
         run: |
@@ -70,25 +90,47 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o build/windows-ui
+          if (-not (Test-Path build/windows-ui/VPNSL.Windows.exe)) { throw 'VPNSL.Windows.exe was not built' }
 
       - name: Prepare portable package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path dist/VPNSL-1.0.8-Windows-x64 | Out-Null
-          Copy-Item build/windows-ui/VPNSL.Windows.exe dist/VPNSL-1.0.8-Windows-x64/
-          Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe dist/VPNSL-1.0.8-Windows-x64/
-          Copy-Item .wintun/wintun/bin/amd64/wintun.dll dist/VPNSL-1.0.8-Windows-x64/
-          Copy-Item windows-client/README.md dist/VPNSL-1.0.8-Windows-x64/
-          Get-FileHash dist/VPNSL-1.0.8-Windows-x64/* -Algorithm SHA256 |
-            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
-            Set-Content dist/VPNSL-1.0.8-Windows-x64/SHA256SUMS.txt
-          Compress-Archive -Path dist/VPNSL-1.0.8-Windows-x64 -DestinationPath dist/VPNSL-1.0.8-Windows-x64.zip -Force
+          $package = 'dist/VPNSL-1.0.8-Windows-x64'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          New-Item -ItemType Directory -Force -Path "$package/server-assets" | Out-Null
+          Copy-Item build/windows-ui/VPNSL.Windows.exe $package/
+          Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe $package/
+          Copy-Item .wintun/wintun/bin/amd64/wintun.dll $package/
+          Copy-Item build/server-assets/* "$package/server-assets/"
+          Copy-Item windows-client/README.md $package/
+          Get-ChildItem $package -File -Recurse |
+            ForEach-Object {
+              $relative = $_.FullName.Substring((Resolve-Path $package).Path.Length + 1).Replace('\','/')
+              "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $relative
+            } | Set-Content "$package/SHA256SUMS.txt"
+          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.8-Windows-x64.zip -Force
+
+      - name: Build Windows installer EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+          }
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler was not found' }
+          & $iscc windows-client/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
+          if (-not (Test-Path dist/VPNSL-1.0.8-Windows-x64-Setup.exe)) { throw 'Installer EXE was not built' }
+          Get-FileHash dist/VPNSL-1.0.8-Windows-x64-Setup.exe -Algorithm SHA256 | Format-List
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: VPNSL-1.0.8-Windows-x64
-          path: dist/VPNSL-1.0.8-Windows-x64.zip
+          path: |
+            dist/VPNSL-1.0.8-Windows-x64.zip
+            dist/VPNSL-1.0.8-Windows-x64-Setup.exe
           if-no-files-found: error
           retention-days: 30
