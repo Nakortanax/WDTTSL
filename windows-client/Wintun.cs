@@ -128,7 +128,15 @@ internal sealed class WintunAdapter : IDisposable
     {
         try { _bridgeCancellation?.Cancel(); } catch { }
         try { _udp?.Dispose(); } catch { }
-        try { Task.WaitAll([_readTask, _writeTask].Where(t => t is not null).Cast<Task>().ToArray(), 1000); } catch { }
+        try
+        {
+            var tasks = new Task?[] { _readTask, _writeTask }
+                .Where(task => task is not null)
+                .Cast<Task>()
+                .ToArray();
+            if (tasks.Length > 0) Task.WaitAll(tasks, 1000);
+        }
+        catch { }
         _bridgeCancellation?.Dispose();
         _bridgeCancellation = null;
         _udp = null;
