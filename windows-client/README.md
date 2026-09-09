@@ -2,42 +2,57 @@
 
 Windows x64 port of the VPNSL Android 1.0.8 client.
 
-## What is preserved
+## Что сохранено
 
-- Existing VPNSL/CSQTT Rust transport and wire protocol.
-- Peer/password/VK hash settings, worker count, obfuscation, TURN transport, captcha/auth parameters.
-- IPv4/CIDR routing profiles.
-- Import of `.bat`, `.txt`, and `.list` route files.
-- Per-profile target: `VPNSL` or `MOBILE` (normal Windows network).
-- Enable/disable route profiles.
-- BAT export compatible with the Android 1.0.8 route format.
-- Site-to-IPv4 BAT generator.
-- Connection logs and traffic statistics.
+- Существующий VPNSL/CSQTT Rust transport и wire protocol.
+- Peer/password/VK hash, количество воркеров, маскировка, TURN transport, captcha/auth параметры.
+- Профили маршрутизации IPv4/CIDR.
+- Импорт `.bat`, `.txt` и `.list` файлов маршрутов.
+- Выбор сети для профиля: `VPNSL` или `MOBILE` (обычная сеть Windows).
+- Включение/отключение профилей маршрутов.
+- BAT-экспорт, совместимый с форматом маршрутов Android 1.0.8.
+- Генератор BAT по имени сайта.
+- Логи подключения и статистика трафика.
 
-## Intentional Windows difference
+## Отличие Windows-версии
 
-Android application selection is not implemented and is not present in the Windows UI. Windows routing is based only on IP/CIDR route profiles and imported route files.
+Выбор приложений Android в Windows-версии намеренно не реализован. Маршрутизация выполняется по IP/CIDR и импортированным файлам маршрутов.
 
-## Architecture
+Windows-версия не останавливается и не ставит VPN на паузу при Wi-Fi. Тип физического подключения (Wi-Fi, Ethernet и т. п.) не используется как условие отключения VPN.
 
-`VPNSL.Windows.exe` creates a Wintun adapter and starts the existing `client.exe` in its native UDP packet mode. Raw IPv4 packets are bridged:
+## Архитектура
+
+`VPNSL.Windows.exe` создаёт Wintun-адаптер и запускает существующий `client.exe` в UDP packet mode:
 
 `Windows route -> Wintun -> local UDP -> client.exe -> VPNSL server`
 
-The server returns `TUNCONF:<ip>:<dns>` through the same event protocol used by Android. The Windows client applies that IP/DNS to Wintun, then installs the enabled route policy.
+Сервер возвращает `TUNCONF:<ip>:<dns>` через тот же event protocol, который используется Android-клиентом. Windows-клиент назначает IP/DNS Wintun и применяет включённые правила маршрутизации.
 
-The default Windows route remains on the physical network. Only enabled `VPNSL` prefixes enter Wintun. A more-specific `MOBILE` prefix can override a broader VPNSL prefix.
+Маршрут по умолчанию остаётся на физической сети Windows. В Wintun направляются только включённые `VPNSL`-префиксы. Более конкретный маршрут `MOBILE` может переопределить более широкий VPNSL-префикс.
 
-## Package
+## Portable-версия
 
-Keep these files in the same directory:
+Распакуйте ZIP полностью в обычную папку. Не переносите `VPNSL.Windows.exe` отдельно.
+
+В одной папке должны находиться как минимум:
 
 - `VPNSL.Windows.exe`
 - `client.exe`
 - `wintun.dll`
+- папка `server-assets`
 
-Run `VPNSL.Windows.exe`. It requests Administrator rights because Wintun, interface IP/DNS, and route-table changes require elevation.
+Запускайте **`VPNSL.Windows.exe`**. Основной EXE стартует как обычное приложение и сам вызывает стандартный запрос UAC (`runas`), потому что Wintun, назначение IP/DNS и изменение таблицы маршрутов требуют прав администратора.
 
-## Current limitation
+Если UAC отменён, программа покажет сообщение и завершится. Если пакет распакован не полностью или приложение падает при старте, будет показана ошибка. Диагностический лог находится здесь:
 
-The Windows UI currently uses manual VK hashes. Android Auto JS/WebView account bootstrapping is not exposed yet in the Windows UI. The VPN transport itself is the same Rust client as Android 1.0.8.
+`%APPDATA%\VPNSL\startup.log`
+
+При обращении с проблемой запуска приложите этот файл.
+
+## Установщик
+
+Установщик требует права администратора для записи в Program Files. Опция «Запустить VPNSL» после установки запускает программу от исходного пользователя; затем само приложение запрашивает UAC. Это исключает `CreateProcess error 740`, который возникал при прямом запуске EXE с обязательным elevation-манифестом.
+
+## Текущее ограничение
+
+Windows UI пока использует ручные VK hashes. Android Auto JS/WebView account bootstrapping пока не выведен в Windows UI. VPN transport использует тот же Rust-клиент, что и Android 1.0.8.
