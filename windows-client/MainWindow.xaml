@@ -1,7 +1,7 @@
 <Window x:Class="VPNSL.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="VPNSL 1.0.8" Width="610" Height="860" MinWidth="520" MinHeight="680"
+        Title="VPNSL 1.0.8" Width="640" Height="900" MinWidth="540" MinHeight="700"
         WindowStartupLocation="CenterScreen">
   <Grid Margin="12">
     <Grid.RowDefinitions>
@@ -25,9 +25,7 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="10" HorizontalAlignment="Stretch">
             <Border Width="132" Height="132" CornerRadius="16" Background="{StaticResource Surface2}" BorderBrush="{StaticResource Border}" BorderThickness="1" HorizontalAlignment="Center" Margin="0,18,0,18">
-              <Grid>
-                <TextBlock Text="V" FontSize="68" FontWeight="Bold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Grid>
+              <Grid><TextBlock Text="V" FontSize="68" FontWeight="Bold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
             </Border>
             <Button x:Name="ConnectButton" Content="Подключить" Height="52" Style="{StaticResource PrimaryButton}" Click="ConnectButton_Click" Margin="0,0,0,10"/>
             <TextBlock x:Name="ConnectionStatus" Text="Отключено" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4"/>
@@ -57,7 +55,7 @@
       <Grid x:Name="SettingsPage" Visibility="Collapsed">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="10">
-            <TextBlock Text="Подключение" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock Text="Туннель" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8"/>
             <TextBlock Text="Peer" Foreground="{StaticResource Muted}"/><TextBox x:Name="PeerBox" ToolTip="IP/домен и порт сервера"/>
             <TextBlock Text="Пароль подключения" Foreground="{StaticResource Muted}"/><PasswordBox x:Name="PasswordBox"/>
             <TextBlock Text="Хеши VK" Foreground="{StaticResource Muted}"/><TextBox x:Name="VkHashesBox" AcceptsReturn="True" Height="75" VerticalScrollBarVisibility="Auto"/>
@@ -94,7 +92,7 @@
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <StackPanel Grid.Row="0">
             <TextBlock Text="Маршрутизация" FontSize="20" FontWeight="SemiBold"/>
-            <TextBlock Text="По умолчанию Windows использует обычную сеть. В VPNSL уходят только включённые маршруты с целью VPNSL; MOBILE может переопределить более широкую VPN-подсеть." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,10"/>
+            <TextBlock Text="Выбор приложений в Windows-версии отсутствует. Маршрутизация выполняется по IPv4/CIDR и загруженным файлам. По умолчанию используется обычная сеть; включённые правила VPNSL направляются в туннель." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,10"/>
             <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*"/><ColumnDefinition/><ColumnDefinition Width="135"/></Grid.ColumnDefinitions>
               <TextBox x:Name="RouteNameBox" Grid.Column="0" Margin="0,4,6,8" ToolTip="Подпись ресурса"/>
@@ -122,7 +120,7 @@
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="RouteEnabled_Changed" Unchecked="RouteEnabled_Changed"/>
-                    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding Routes[0]}" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding Target, StringFormat=Сеть: {0}}" Foreground="{StaticResource Primary}"/></StackPanel>
+                    <StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding Routes[0]}" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding Target, StringFormat='Сеть: {0}'}" Foreground="{StaticResource Primary}"/></StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal"><Button Content="Сеть" Tag="{Binding Id}" Click="ChangeRouteTarget_Click"/><Button Content="Удалить" Tag="{Binding Id}" Click="DeleteRoute_Click"/></StackPanel>
                   </Grid>
                 </Border>
@@ -135,11 +133,47 @@
       <Grid x:Name="ServerPage" Visibility="Collapsed">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="10">
-            <TextBlock Text="Сервер" FontSize="20" FontWeight="SemiBold"/>
-            <TextBlock Text="Деплой и обслуживание сервера будут использовать те же серверные файлы VPNSL 1.0.8. Windows-клиент не меняет протокол сервера." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,8,0,12"/>
-            <TextBlock Text="SSH host" Foreground="{StaticResource Muted}"/><TextBox x:Name="SshHostBox"/>
-            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,6,0"><TextBlock Text="SSH port" Foreground="{StaticResource Muted}"/><TextBox x:Name="SshPortBox" Text="22"/></StackPanel><StackPanel Grid.Column="1" Margin="6,0,0,0"><TextBlock Text="SSH user" Foreground="{StaticResource Muted}"/><TextBox x:Name="SshUserBox" Text="root"/></StackPanel></Grid>
-            <TextBlock Text="На первом этапе Windows-сборка использует существующий сервер 1.0.8; кнопки переустановки появятся после проверки Windows VPN-сборки." Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8"/>
+            <TextBlock Text="Установка на сервер" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Text="Установка и удаление сервера VPNSL 1.0.8 по SSH. В пакет Windows входят серверные бинарники для amd64, arm64 и armv7 из того же исходного кода 1.0.8." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,10"/>
+
+            <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock Text="SSH" FontWeight="SemiBold"/>
+                <TextBlock Text="Адрес VPS" Foreground="{StaticResource Muted}"/><TextBox x:Name="SshHostBox"/>
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Margin="0,0,6,0"><TextBlock Text="SSH port" Foreground="{StaticResource Muted}"/><TextBox x:Name="SshPortBox" Text="22"/></StackPanel>
+                  <StackPanel Grid.Column="1" Margin="6,0,0,0"><TextBlock Text="SSH user" Foreground="{StaticResource Muted}"/><TextBox x:Name="SshUserBox" Text="root"/></StackPanel>
+                </Grid>
+                <TextBlock Text="SSH пароль" Foreground="{StaticResource Muted}"/><PasswordBox x:Name="SshPasswordBox"/>
+                <TextBlock Text="Приватный ключ (необязательно)" Foreground="{StaticResource Muted}"/>
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><TextBox x:Name="SshKeyPathBox" Grid.Column="0" Margin="0,4,6,8"/><Button Grid.Column="1" Content="Выбрать…" Click="BrowseSshKey_Click"/></Grid>
+                <TextBlock Text="Passphrase ключа" Foreground="{StaticResource Muted}"/><PasswordBox x:Name="SshKeyPassphraseBox"/>
+                <Button Content="Проверить SSH" Click="TestSsh_Click" HorizontalAlignment="Left"/>
+              </StackPanel>
+            </Border>
+
+            <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="10" Padding="12">
+              <StackPanel>
+                <TextBlock Text="VPNSL" FontWeight="SemiBold"/>
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Margin="0,0,6,0"><TextBlock Text="Peer port" Foreground="{StaticResource Muted}"/><TextBox x:Name="ServerPeerPortBox" Text="46000"/></StackPanel>
+                  <StackPanel Grid.Column="1" Margin="6,0,0,0"><TextBlock Text="Web port" Foreground="{StaticResource Muted}"/><TextBox x:Name="ServerWebPortBox" Text="46002"/></StackPanel>
+                </Grid>
+                <TextBlock Text="Основной пароль VPNSL" Foreground="{StaticResource Muted}"/><PasswordBox x:Name="ServerMainPasswordBox"/>
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Margin="0,0,6,0"><TextBlock Text="Логин web-панели" Foreground="{StaticResource Muted}"/><TextBox x:Name="ServerWebLoginBox"/></StackPanel>
+                  <StackPanel Grid.Column="1" Margin="6,0,0,0"><TextBlock Text="Пароль web-панели" Foreground="{StaticResource Muted}"/><PasswordBox x:Name="ServerWebPasswordBox"/></StackPanel>
+                </Grid>
+                <CheckBox x:Name="ServerDockerBox" Content="Установить в Docker" Foreground="{StaticResource Text}" Margin="0,8"/>
+                <TextBlock x:Name="ServerDeployStatusText" Text="Готово" Foreground="{StaticResource Muted}" Margin="0,4"/>
+                <ProgressBar x:Name="ServerProgress" Height="6" IsIndeterminate="True" Visibility="Collapsed" Margin="0,4,0,8"/>
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <Button x:Name="InstallServerButton" Grid.Column="0" Content="Установить / переустановить" Style="{StaticResource PrimaryButton}" Click="InstallServer_Click"/>
+                  <Button x:Name="UninstallServerButton" Grid.Column="1" Content="Удалить" Click="UninstallServer_Click"/>
+                </Grid>
+                <Button Content="Открыть web-панель" Click="OpenServerPanel_Click"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </Grid>
@@ -157,7 +191,7 @@
             <StackPanel>
               <TextBlock Text="VPNSL for Windows" FontSize="24" FontWeight="Bold" Foreground="{StaticResource Primary}"/>
               <TextBlock Text="1.0.8 by Sazhaev-IA" Foreground="{StaticResource Muted}" Margin="0,4"/>
-              <TextBlock Text="Windows-порт Android VPNSL 1.0.8. VPN-протокол и Rust-клиент сохранены; Android-выбор приложений намеренно отсутствует. Маршрутизация выполняется по IPv4/CIDR и файлам." TextWrapping="Wrap" Margin="0,12,0,0"/>
+              <TextBlock Text="Windows-порт Android VPNSL 1.0.8. VPN-протокол и Rust-клиент сохранены. Выбор приложений намеренно не реализован; маршрутизация работает по IPv4/CIDR и файлам." TextWrapping="Wrap" Margin="0,12,0,0"/>
             </StackPanel>
           </Border>
           <Button Content="Открыть репозиторий Nakortanax/WDTTSL" Click="OpenRepo_Click" Margin="0,12,0,0"/>
@@ -168,9 +202,9 @@
     <Border Grid.Row="2" Background="{StaticResource Surface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="10" Padding="5" Margin="0,10,0,0">
       <UniformGrid Rows="1" Columns="6">
         <Button Content="Подключение" Tag="connection" Click="Nav_Click"/>
-        <Button Content="Настройки" Tag="settings" Click="Nav_Click"/>
+        <Button Content="Туннель" Tag="settings" Click="Nav_Click"/>
+        <Button Content="Установка" Tag="server" Click="Nav_Click"/>
         <Button Content="Маршруты" Tag="routing" Click="Nav_Click"/>
-        <Button Content="Сервер" Tag="server" Click="Nav_Click"/>
         <Button Content="Логи" Tag="logs" Click="Nav_Click"/>
         <Button Content="Инфо" Tag="info" Click="Nav_Click"/>
       </UniformGrid>
