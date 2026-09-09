@@ -44,7 +44,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           cargo build --release --target x86_64-pc-windows-msvc
-          Test-Path target/x86_64-pc-windows-msvc/release/client.exe | Should -BeTrue
+          if (-not (Test-Path target/x86_64-pc-windows-msvc/release/client.exe)) { throw 'client.exe was not built' }
 
       - name: Download official signed Wintun 0.14.1
         shell: pwsh
@@ -56,7 +56,7 @@ jobs:
             throw "Wintun checksum mismatch: $hash"
           }
           Expand-Archive wintun.zip -DestinationPath .wintun -Force
-          Test-Path .wintun/wintun/bin/amd64/wintun.dll | Should -BeTrue
+          if (-not (Test-Path .wintun/wintun/bin/amd64/wintun.dll)) { throw 'wintun.dll was not extracted' }
 
       - name: Build Windows UI
         shell: pwsh
