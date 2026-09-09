@@ -7,6 +7,7 @@ on:
       - windows-v1.0.8
     paths:
       - 'windows-client/**'
+      - 'rust-client/**'
       - '.github/workflows/build-windows-v108-fast.yml'
 
 permissions:
@@ -16,7 +17,7 @@ permissions:
 jobs:
   final:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout final Windows source
         uses: actions/checkout@v4
@@ -25,6 +26,12 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: Set up Rust 1.97.1
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          targets: x86_64-pc-windows-msvc
 
       - name: Verify Wi-Fi pause logic is absent
         shell: pwsh
@@ -47,7 +54,26 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o build/windows-ui
-          if (-not (Test-Path build/windows-ui/VPNSL.Windows.exe)) { throw 'VPNSL.Windows.exe was not built' }
+          $exe = 'build/windows-ui/VPNSL.Windows.exe'
+          if (-not (Test-Path $exe)) { throw 'VPNSL.Windows.exe was not built' }
+          $exeText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
+          if (-not $exeText.Contains('requestedExecutionLevel level="asInvoker"')) {
+            throw 'VPNSL.Windows.exe does not contain the required asInvoker manifest'
+          }
+
+      - name: Build VPNSL Rust client with static CRT
+        shell: pwsh
+        working-directory: rust-client
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --release --target x86_64-pc-windows-msvc
+          $client = 'target/x86_64-pc-windows-msvc/release/client.exe'
+          if (-not (Test-Path $client)) { throw 'client.exe was not built' }
+          $clientText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($client))
+          if ($clientText -match 'VCRUNTIME140\.dll') {
+            throw 'client.exe still depends on VCRUNTIME140.dll; static CRT build failed'
+          }
+          Get-FileHash $client -Algorithm SHA256 | Format-List
 
       - name: Download verified run 21 package baseline
         shell: pwsh
@@ -67,7 +93,6 @@ jobs:
           $portable = 'baseline-artifact/VPNSL-1.0.8-Windows-x64.zip'
           if (-not (Test-Path $portable)) { throw 'Verified baseline portable package is missing' }
           Expand-Archive $portable -DestinationPath baseline-portable -Force
-          if (-not (Test-Path 'baseline-portable/VPNSL-1.0.8-Windows-x64/client.exe')) { throw 'Baseline client.exe missing' }
           if (-not (Test-Path 'baseline-portable/VPNSL-1.0.8-Windows-x64/wintun.dll')) { throw 'Baseline wintun.dll missing' }
           foreach ($name in @('csqtt-linux-amd64','csqtt-linux-arm64','csqtt-linux-armv7','deploy.sh')) {
             if (-not (Test-Path "baseline-portable/VPNSL-1.0.8-Windows-x64/server-assets/$name")) { throw "Baseline server asset missing: $name" }
@@ -81,7 +106,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
           Copy-Item build/windows-ui/VPNSL.Windows.exe "$package/VPNSL.Windows.exe" -Force
+          Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe "$package/client.exe" -Force
           Remove-Item "$package/SHA256SUMS.txt" -Force -ErrorAction SilentlyContinue
+          foreach ($required in @('VPNSL.Windows.exe','client.exe','wintun.dll')) {
+            if (-not (Test-Path "$package/$required")) { throw "Portable package missing: $required" }
+          }
           Get-ChildItem $package -File -Recurse |
             Sort-Object FullName |
             ForEach-Object {
