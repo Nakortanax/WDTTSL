@@ -45,7 +45,6 @@ public partial class MainWindow : Window
         TurnPortBox.Text = _settings.TurnPort;
         SniBox.Text = _settings.Sni;
         ClientIdsBox.Text = _settings.ClientIds;
-        AutoPauseWifiBox.IsChecked = _settings.AutoPauseOnWifi;
         SetCombo(TurnTransportBox, _settings.TurnTransport);
         SetCombo(ObfsBox, _settings.Obfs);
         SetCombo(VkAuthBox, _settings.VkAuthMode);
@@ -71,7 +70,6 @@ public partial class MainWindow : Window
         _settings.CaptchaMode = ComboText(CaptchaBox, "auto");
         _settings.Fingerprint = ComboText(FingerprintBox, "chrome");
         _settings.ClientIds = ClientIdsBox.Text.Trim();
-        _settings.AutoPauseOnWifi = AutoPauseWifiBox.IsChecked == true;
         SettingsStore.Save(_settings);
         RefreshConnectionSummary();
     }
@@ -255,15 +253,6 @@ public partial class MainWindow : Window
         HeaderStatus.Text = status;
         ConnectionStatus.Text = status;
         if (status == "Подключено")
-        {
-            ConnectButton.Content = "Отключить";
-            if (!_uptime.IsRunning)
-            {
-                _uptime.Start();
-                _timer.Start();
-            }
-        }
-        else if (status.StartsWith("Пауза", StringComparison.Ordinal))
         {
             ConnectButton.Content = "Отключить";
             if (!_uptime.IsRunning)
