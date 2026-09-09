@@ -81,13 +81,17 @@ public partial class MainWindow : Window
         ConnectButton.IsEnabled = false;
         try
         {
-            if (_engine.IsRunning)
+            if (_engine.IsActive)
             {
                 await _engine.DisconnectAsync();
                 return;
             }
             SaveSettingsFromUi();
             await _engine.ConnectAsync(_settings);
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog("[WINDOWS] Подключение отменено");
         }
         catch (Exception ex)
         {
@@ -253,8 +257,20 @@ public partial class MainWindow : Window
         if (status == "Подключено")
         {
             ConnectButton.Content = "Отключить";
-            _uptime.Restart();
-            _timer.Start();
+            if (!_uptime.IsRunning)
+            {
+                _uptime.Start();
+                _timer.Start();
+            }
+        }
+        else if (status.StartsWith("Пауза", StringComparison.Ordinal))
+        {
+            ConnectButton.Content = "Отключить";
+            if (!_uptime.IsRunning)
+            {
+                _uptime.Start();
+                _timer.Start();
+            }
         }
         else if (status == "Отключено")
         {
