@@ -36,4 +36,4 @@ Name: "{group}\VPNSL"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\VPNSL"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить VPNSL"; Flags: nowait postinstall skipifsilent shellexec
+Filename: "{app}\{#MyAppExeName}"; Description: "Запустить VPNSL"; Flags: nowait postinstall skipifsilent runasoriginaluser
