@@ -8,7 +8,9 @@ on:
     paths:
       - 'windows-client/**'
       - 'rust-client/**'
+      - 'rust-server/**'
       - 'shared/**'
+      - 'scripts/server_asset_provenance.ps1'
       - '.github/workflows/build-windows-v108.yml'
 
 permissions:
@@ -38,6 +40,14 @@ jobs:
           toolchain: 1.97.1
           targets: x86_64-pc-windows-msvc
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rust-client -> rust-client/target
+            rust-server -> build/csqtt-uring-linux
+          cache-on-failure: true
+
       - name: Build existing VPNSL Rust client for Windows
         shell: pwsh
         working-directory: rust-client
@@ -58,25 +68,37 @@ jobs:
           Expand-Archive wintun.zip -DestinationPath .wintun -Force
           if (-not (Test-Path .wintun/wintun/bin/amd64/wintun.dll)) { throw 'wintun.dll was not extracted' }
 
-      - name: Extract exact server assets from VPNSL Android 1.0.8
+      - name: Install Linux cross-build tools
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $apkUrl = 'https://github.com/Nakortanax/WDTTSL/releases/download/v1.0.8/VPNSL-1.0.8-universal.apk'
-          Invoke-WebRequest -Uri $apkUrl -OutFile vpnsl-v108.apk
-          $hash = (Get-FileHash vpnsl-v108.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '1e3c158d0b985a5fe171a50263df0f7932a47e69c66aa6f4b2597c7f19e59310') {
-            throw "VPNSL 1.0.8 APK checksum mismatch: $hash"
+          if (-not (Get-Command zig -ErrorAction SilentlyContinue)) {
+            choco install zig --yes --no-progress
           }
-          Copy-Item vpnsl-v108.apk vpnsl-v108.zip
-          Expand-Archive vpnsl-v108.zip -DestinationPath .v108-apk -Force
+          zig version
+          if (-not (Get-Command cargo-zigbuild -ErrorAction SilentlyContinue)) {
+            cargo install cargo-zigbuild --locked
+          }
+          cargo zigbuild --help | Select-Object -First 5
+
+      - name: Build exact VPNSL 1.0.8 server binaries
+        shell: cmd
+        working-directory: rust-server
+        run: build_linux.bat --no-tests
+
+      - name: Collect server assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path build/server-assets | Out-Null
-          foreach ($name in @('deploy.sh','csqtt-linux-amd64','csqtt-linux-arm64','csqtt-linux-armv7')) {
-            $source = Join-Path '.v108-apk/assets' $name
-            if (-not (Test-Path $source)) { throw "Server asset missing in VPNSL 1.0.8 APK: $name" }
+          Copy-Item app/src/main/assets/deploy.sh build/server-assets/deploy.sh
+          foreach ($name in @('csqtt-linux-amd64','csqtt-linux-arm64','csqtt-linux-armv7')) {
+            $source = Join-Path 'app/src/main/assets' $name
+            if (-not (Test-Path $source)) { throw "Server build did not produce: $name" }
+            if ((Get-Item $source).Length -le 0) { throw "Server binary is empty: $name" }
             Copy-Item $source build/server-assets/$name
           }
-          Get-ChildItem build/server-assets | Select-Object Name,Length
+          Get-FileHash build/server-assets/* -Algorithm SHA256 | Format-Table -AutoSize
 
       - name: Build Windows UI
         shell: pwsh
