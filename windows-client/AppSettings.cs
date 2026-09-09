@@ -36,7 +36,14 @@ public sealed class AppSettings
     public string Fingerprint { get; set; } = "chrome";
     public string ClientIds { get; set; } = "8202606,6287487";
     public string DeviceId { get; set; } = Guid.NewGuid().ToString("N");
-    public bool AutoPauseOnWifi { get; set; }
+
+    // Windows must remain connected regardless of the physical Internet type.
+    // Keep the legacy JSON property readable for old settings files, but ignore it.
+    public bool AutoPauseOnWifi
+    {
+        get => false;
+        set { }
+    }
 
     public string SshHost { get; set; } = "";
     public string SshUser { get; set; } = "root";
