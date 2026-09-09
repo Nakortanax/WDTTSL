@@ -199,11 +199,35 @@ internal sealed class ServerDeployService
 
     private static string BuildWebEnv(AppSettings settings)
     {
-        // deploy.sh reads this file for both systemd and docker installs.
-        return $"CSQTT_WEB_USER={EnvQuote(settings.ServerWebLogin)}\nCSQTT_WEB_PASS={EnvQuote(settings.ServerWebPassword)}\n";
+        return $"CSQTT_WEB_USER={DeployEnvironmentValue(settings.ServerWebLogin, settings.ServerDockerInstall)}\n" +
+               $"CSQTT_WEB_PASS={DeployEnvironmentValue(settings.ServerWebPassword, settings.ServerDockerInstall)}\n";
     }
 
-    private static string EnvQuote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";
+    private static string DeployEnvironmentValue(string value, bool docker) =>
+        docker ? DockerEnvironmentValue(value) : SystemdEnvironmentValue(value);
+
+    private static string DockerEnvironmentValue(string value) =>
+        value.Replace('\n', ' ').Replace('\r', ' ');
+
+    private static string SystemdEnvironmentValue(string value)
+    {
+        var builder = new StringBuilder(value.Length + 8);
+        builder.Append('"');
+        foreach (var ch in value)
+        {
+            switch (ch)
+            {
+                case '\\': builder.Append("\\\\"); break;
+                case '"': builder.Append("\\\""); break;
+                case '\n':
+                case '\r': builder.Append(' '); break;
+                default: builder.Append(ch); break;
+            }
+        }
+        builder.Append('"');
+        return builder.ToString();
+    }
+
     private static string ShellQuote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";
 
     private static string MapServerBinary(string architecture) => architecture.Trim().ToLowerInvariant() switch
