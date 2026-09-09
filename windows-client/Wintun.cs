@@ -64,8 +64,9 @@ internal sealed class WintunAdapter : IDisposable
                 {
                     if (size is > 0 and <= 0xFFFF)
                     {
-                        var managed = new byte[size];
-                        Marshal.Copy(packet, managed, 0, checked((int)size));
+                        var length = checked((int)size);
+                        var managed = new byte[length];
+                        Marshal.Copy(packet, managed, 0, length);
                         await udp.SendAsync(managed, token);
                     }
                 }
