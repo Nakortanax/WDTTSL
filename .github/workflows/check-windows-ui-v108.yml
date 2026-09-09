@@ -1,0 +1,29 @@
+name: Check VPNSL 1.0.8 Windows UI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - windows-v1.0.8
+    paths:
+      - 'windows-client/**'
+      - '.github/workflows/check-windows-ui-v108.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore and build WPF UI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore windows-client/VPNSL.Windows.csproj
+          dotnet build windows-client/VPNSL.Windows.csproj -c Release --no-restore
