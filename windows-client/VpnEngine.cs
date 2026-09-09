@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text.Json;
 
@@ -9,28 +10,34 @@ namespace VPNSL.Windows;
 internal sealed class VpnEngine : IDisposable
 {
     private readonly object _gate = new();
+    private readonly object _stdinGate = new();
     private CancellationTokenSource? _cancellation;
     private Process? _client;
     private WintunAdapter? _wintun;
     private readonly List<(string Prefix, uint InterfaceIndex)> _installedRoutes = [];
     private TaskCompletionSource<(string Ip, string Dns)>? _configSource;
+    private Task? _wifiMonitorTask;
+    private bool _pausedForWifi;
     private bool _running;
 
     public bool IsRunning => _running;
+    public bool IsActive => _running || _cancellation is not null;
     public event Action<string>? Log;
     public event Action<string>? StatusChanged;
     public event Action<int, long, long>? StatsChanged;
 
     public async Task ConnectAsync(AppSettings settings)
     {
+        CancellationTokenSource sessionCancellation;
         lock (_gate)
         {
             if (_running || _cancellation is not null) return;
-            _cancellation = new CancellationTokenSource();
+            sessionCancellation = new CancellationTokenSource();
+            _cancellation = sessionCancellation;
             _configSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        var token = _cancellation.Token;
+        var token = sessionCancellation.Token;
         try
         {
             Validate(settings);
@@ -56,6 +63,11 @@ internal sealed class VpnEngine : IDisposable
             _running = true;
             StatusChanged?.Invoke("Подключено");
             Log?.Invoke($"[WINDOWS] Wintun активен, interface index {_wintun.InterfaceIndex}");
+            _wifiMonitorTask = Task.Run(() => MonitorWifiAutoPauseAsync(settings, token), CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            await DisconnectAsync();
         }
         catch
         {
@@ -67,15 +79,25 @@ internal sealed class VpnEngine : IDisposable
     public async Task DisconnectAsync()
     {
         CancellationTokenSource? cancellation;
+        Task? wifiMonitor;
         lock (_gate)
         {
             cancellation = _cancellation;
             if (cancellation is null && !_running) return;
             _cancellation = null;
+            _running = false;
+            wifiMonitor = _wifiMonitorTask;
+            _wifiMonitorTask = null;
         }
 
         StatusChanged?.Invoke("Отключение…");
         try { cancellation?.Cancel(); } catch { }
+
+        if (wifiMonitor is not null)
+        {
+            try { await wifiMonitor.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
+        }
+        _pausedForWifi = false;
 
         try { _wintun?.Dispose(); } catch (Exception ex) { Log?.Invoke($"[WINDOWS] Wintun stop: {ex.Message}"); }
         _wintun = null;
@@ -90,7 +112,7 @@ internal sealed class VpnEngine : IDisposable
             {
                 if (!client.HasExited)
                 {
-                    client.StandardInput.WriteLine("STOP");
+                    TrySendControlCommand(client, "STOP");
                     if (!client.WaitForExit(1200)) client.Kill(true);
                 }
             }
@@ -104,7 +126,6 @@ internal sealed class VpnEngine : IDisposable
         cancellation?.Dispose();
         _configSource?.TrySetCanceled();
         _configSource = null;
-        _running = false;
         StatusChanged?.Invoke("Отключено");
         Log?.Invoke("[WINDOWS] VPN остановлен");
     }
@@ -154,13 +175,98 @@ internal sealed class VpnEngine : IDisposable
             if (!token.IsCancellationRequested)
             {
                 Log?.Invoke($"[КЛИЕНТ] Процесс завершён, код {SafeExitCode(process)}");
-                StatusChanged?.Invoke("Отключено");
+                _ = Task.Run(async () =>
+                {
+                    try { await DisconnectAsync(); }
+                    catch (Exception ex) { Log?.Invoke($"[WINDOWS] Очистка после остановки клиента: {ex.Message}"); }
+                });
             }
         };
         if (!process.Start()) throw new InvalidOperationException("Не удалось запустить client.exe");
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _client = process;
+    }
+
+    private async Task MonitorWifiAutoPauseAsync(AppSettings settings, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                var shouldPause = settings.AutoPauseOnWifi && IsWifiConnected();
+                if (shouldPause != _pausedForWifi)
+                {
+                    var client = _client;
+                    if (client is not null && !client.HasExited)
+                    {
+                        if (shouldPause)
+                        {
+                            if (TrySendControlCommand(client, "PAUSE"))
+                            {
+                                _pausedForWifi = true;
+                                StatusChanged?.Invoke("Пауза · Wi-Fi");
+                                Log?.Invoke("[WIFI] VPNSL поставлен на паузу: Wi-Fi подключён");
+                            }
+                        }
+                        else
+                        {
+                            if (TrySendControlCommand(client, "RESUME"))
+                            {
+                                _pausedForWifi = false;
+                                StatusChanged?.Invoke("Подключено");
+                                Log?.Invoke("[WIFI] VPNSL возобновлён: Wi-Fi отключён или автопауза выключена");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!token.IsCancellationRequested) Log?.Invoke($"[WIFI] Проверка сети: {ex.Message}");
+            }
+
+            try { await Task.Delay(1500, token); }
+            catch (OperationCanceledException) { return; }
+        }
+    }
+
+    private static bool IsWifiConnected()
+    {
+        return NetworkInterface.GetAllNetworkInterfaces().Any(network =>
+        {
+            if (network.NetworkInterfaceType != NetworkInterfaceType.Wireless80211 || network.OperationalStatus != OperationalStatus.Up)
+                return false;
+            try
+            {
+                var properties = network.GetIPProperties();
+                return properties.UnicastAddresses.Any(address => address.Address.AddressFamily == AddressFamily.InterNetwork) &&
+                       properties.GatewayAddresses.Any(gateway => gateway.Address.AddressFamily == AddressFamily.InterNetwork && !gateway.Address.Equals(IPAddress.Any));
+            }
+            catch
+            {
+                return false;
+            }
+        });
+    }
+
+    private bool TrySendControlCommand(Process client, string command)
+    {
+        try
+        {
+            lock (_stdinGate)
+            {
+                if (client.HasExited) return false;
+                client.StandardInput.WriteLine(command);
+                client.StandardInput.Flush();
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"[STDIN] {command}: {ex.Message}");
+            return false;
+        }
     }
 
     private void HandleClientLine(string? line)
@@ -362,11 +468,13 @@ internal sealed class VpnEngine : IDisposable
     }
 
     private static int PrefixLength(string cidr) => int.TryParse(cidr[(cidr.LastIndexOf('/') + 1)..], out var prefix) ? prefix : 0;
+
     private static int FindFreeUdpPort()
     {
         using var probe = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         return ((IPEndPoint)probe.Client.LocalEndPoint!).Port;
     }
+
     private static int NormalizeWorkers(int value) => Math.Clamp(value, 9, 126) / 9 * 9;
     private static string Ps(string value) => value.Replace("'", "''");
     private static int SafeExitCode(Process process) { try { return process.ExitCode; } catch { return -1; } }
