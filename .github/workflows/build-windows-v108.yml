@@ -80,11 +80,27 @@ jobs:
             cargo install cargo-zigbuild --locked
           }
           cargo zigbuild --help | Select-Object -First 5
+          rustup target add x86_64-unknown-linux-musl
+          rustup target add aarch64-unknown-linux-musl
+          rustup target add armv7-unknown-linux-musleabihf
 
-      - name: Build exact VPNSL 1.0.8 server binaries
+      - name: Build exact VPNSL 1.0.8 server binaries sequentially
         shell: cmd
         working-directory: rust-server
-        run: build_linux.bat --no-tests
+        run: |
+          build_linux.bat --build-variant x86_64-unknown-linux-musl csqtt-linux-amd64
+          if errorlevel 1 exit /b 1
+          build_linux.bat --build-variant aarch64-unknown-linux-musl csqtt-linux-arm64
+          if errorlevel 1 exit /b 1
+          build_linux.bat --build-variant armv7-unknown-linux-musleabihf csqtt-linux-armv7
+          if errorlevel 1 exit /b 1
+
+      - name: Verify server assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/server_asset_provenance.ps1 -Mode Write
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/server_asset_provenance.ps1 -Mode Verify
 
       - name: Collect server assets
         shell: pwsh
