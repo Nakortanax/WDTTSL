@@ -37,6 +37,20 @@ public sealed class AppSettings
     public string ClientIds { get; set; } = "8202606,6287487";
     public string DeviceId { get; set; } = Guid.NewGuid().ToString("N");
     public bool AutoPauseOnWifi { get; set; }
+
+    public string SshHost { get; set; } = "";
+    public string SshUser { get; set; } = "root";
+    public string SshPassword { get; set; } = "";
+    public int SshPort { get; set; } = 22;
+    public int ServerPeerPort { get; set; } = 46000;
+    public int ServerWebPort { get; set; } = 46002;
+    public string ServerMainPassword { get; set; } = "";
+    public string ServerWebLogin { get; set; } = "";
+    public string ServerWebPassword { get; set; } = "";
+    public bool ServerDockerInstall { get; set; }
+    public string SshPrivateKeyPath { get; set; } = "";
+    public string SshPrivateKeyPassphrase { get; set; } = "";
+
     public List<RouteProfile> Routes { get; set; } = [];
 }
 
