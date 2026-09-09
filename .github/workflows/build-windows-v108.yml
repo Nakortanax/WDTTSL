@@ -1,0 +1,94 @@
+name: Build VPNSL 1.0.8 Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - windows-v1.0.8
+    paths:
+      - 'windows-client/**'
+      - 'rust-client/**'
+      - 'shared/**'
+      - '.github/workflows/build-windows-v108.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vpnsl-windows-108-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout VPNSL 1.0.8 Windows branch
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Rust 1.97.1
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build existing VPNSL Rust client for Windows
+        shell: pwsh
+        working-directory: rust-client
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --release --target x86_64-pc-windows-msvc
+          Test-Path target/x86_64-pc-windows-msvc/release/client.exe | Should -BeTrue
+
+      - name: Download official signed Wintun 0.14.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile wintun.zip
+          $hash = (Get-FileHash wintun.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51') {
+            throw "Wintun checksum mismatch: $hash"
+          }
+          Expand-Archive wintun.zip -DestinationPath .wintun -Force
+          Test-Path .wintun/wintun/bin/amd64/wintun.dll | Should -BeTrue
+
+      - name: Build Windows UI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish windows-client/VPNSL.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o build/windows-ui
+
+      - name: Prepare portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist/VPNSL-1.0.8-Windows-x64 | Out-Null
+          Copy-Item build/windows-ui/VPNSL.Windows.exe dist/VPNSL-1.0.8-Windows-x64/
+          Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe dist/VPNSL-1.0.8-Windows-x64/
+          Copy-Item .wintun/wintun/bin/amd64/wintun.dll dist/VPNSL-1.0.8-Windows-x64/
+          Copy-Item windows-client/README.md dist/VPNSL-1.0.8-Windows-x64/
+          Get-FileHash dist/VPNSL-1.0.8-Windows-x64/* -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
+            Set-Content dist/VPNSL-1.0.8-Windows-x64/SHA256SUMS.txt
+          Compress-Archive -Path dist/VPNSL-1.0.8-Windows-x64 -DestinationPath dist/VPNSL-1.0.8-Windows-x64.zip -Force
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPNSL-1.0.8-Windows-x64
+          path: dist/VPNSL-1.0.8-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
