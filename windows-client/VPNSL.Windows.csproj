@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>VPNSL.Windows</AssemblyName>
+    <RootNamespace>VPNSL.Windows</RootNamespace>
+    <Version>1.0.8</Version>
+    <FileVersion>1.0.8.0</FileVersion>
+    <Product>VPNSL for Windows</Product>
+    <Authors>Sazhaev-IA</Authors>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+</Project>
