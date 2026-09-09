@@ -6,6 +6,7 @@ on:
     branches:
       - windows-v1.0.8
     paths:
+      - 'windows-client/**'
       - '.github/workflows/build-windows-v108-fast.yml'
 
 permissions:
