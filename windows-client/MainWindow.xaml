@@ -81,7 +81,6 @@
               <StackPanel Grid.Column="1" Margin="6,0,0,0"><TextBlock Text="Fingerprint" Foreground="{StaticResource Muted}"/><ComboBox x:Name="FingerprintBox"><ComboBoxItem Content="chrome"/><ComboBoxItem Content="firefox"/></ComboBox></StackPanel>
             </Grid>
             <TextBlock Text="Client IDs" Foreground="{StaticResource Muted}"/><TextBox x:Name="ClientIdsBox"/>
-            <CheckBox x:Name="AutoPauseWifiBox" Content="Автопауза при Wi-Fi" Foreground="{StaticResource Text}" Margin="0,8"/>
             <Button Content="Сохранить настройки" Style="{StaticResource PrimaryButton}" Click="SaveSettings_Click"/>
           </StackPanel>
         </ScrollViewer>
