@@ -1,0 +1,115 @@
+name: Build VPNSL 1.0.8 Windows Fast Final
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - windows-v1.0.8
+    paths:
+      - '.github/workflows/build-windows-v108-fast.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout final Windows source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify Wi-Fi pause logic is absent
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Get-Content windows-client/VpnEngine.cs -Raw
+          foreach ($forbidden in @('MonitorWifiAutoPauseAsync','IsWifiConnected','"PAUSE"','"RESUME"','_wifiMonitorTask','_pausedForWifi')) {
+            if ($source.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
+          }
+
+      - name: Build final Windows UI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish windows-client/VPNSL.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o build/windows-ui
+          if (-not (Test-Path build/windows-ui/VPNSL.Windows.exe)) { throw 'VPNSL.Windows.exe was not built' }
+
+      - name: Download verified run 21 package baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_ARTIFACT_ID: '10086607313'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:BASELINE_ARTIFACT_ID/zip"
+          Invoke-WebRequest -Uri $uri -Headers $headers -OutFile baseline-artifact.zip -MaximumRedirection 10
+          Expand-Archive baseline-artifact.zip -DestinationPath baseline-artifact -Force
+          $portable = 'baseline-artifact/VPNSL-1.0.8-Windows-x64.zip'
+          if (-not (Test-Path $portable)) { throw 'Verified baseline portable package is missing' }
+          Expand-Archive $portable -DestinationPath baseline-portable -Force
+          if (-not (Test-Path 'baseline-portable/VPNSL-1.0.8-Windows-x64/client.exe')) { throw 'Baseline client.exe missing' }
+          if (-not (Test-Path 'baseline-portable/VPNSL-1.0.8-Windows-x64/wintun.dll')) { throw 'Baseline wintun.dll missing' }
+          foreach ($name in @('csqtt-linux-amd64','csqtt-linux-arm64','csqtt-linux-armv7','deploy.sh')) {
+            if (-not (Test-Path "baseline-portable/VPNSL-1.0.8-Windows-x64/server-assets/$name")) { throw "Baseline server asset missing: $name" }
+          }
+
+      - name: Assemble final portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = 'dist/VPNSL-1.0.8-Windows-x64'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
+          Copy-Item build/windows-ui/VPNSL.Windows.exe "$package/VPNSL.Windows.exe" -Force
+          Remove-Item "$package/SHA256SUMS.txt" -Force -ErrorAction SilentlyContinue
+          Get-ChildItem $package -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              $relative = $_.FullName.Substring((Resolve-Path $package).Path.Length + 1).Replace('\','/')
+              "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $relative
+            } | Set-Content "$package/SHA256SUMS.txt"
+          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.8-Windows-x64.zip -Force
+
+      - name: Build final Windows installer EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+          }
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler was not found' }
+          & $iscc windows-client/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
+          $installer = 'dist/VPNSL-1.0.8-Windows-x64-Setup.exe'
+          if (-not (Test-Path $installer)) { throw 'Installer EXE was not built' }
+          Get-FileHash $installer -Algorithm SHA256 | Format-List
+
+      - name: Upload final Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPNSL-1.0.8-Windows-x64-final
+          path: |
+            dist/VPNSL-1.0.8-Windows-x64.zip
+            dist/VPNSL-1.0.8-Windows-x64-Setup.exe
+          if-no-files-found: error
+          retention-days: 30
