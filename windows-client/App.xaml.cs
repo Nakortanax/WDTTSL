@@ -98,8 +98,8 @@ public partial class App : Application
     {
         try
         {
-            Directory.CreateDirectory(AppSettings.DirectoryPath);
-            var path = Path.Combine(AppSettings.DirectoryPath, "startup-error.log");
+            Directory.CreateDirectory(SettingsStore.DirectoryPath);
+            var path = Path.Combine(SettingsStore.DirectoryPath, "startup-error.log");
             File.AppendAllText(path, $"[{DateTimeOffset.Now:O}]\r\n{ex}\r\n\r\n");
         }
         catch
