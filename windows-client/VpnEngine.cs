@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text.Json;
 
@@ -16,8 +15,6 @@ internal sealed class VpnEngine : IDisposable
     private WintunAdapter? _wintun;
     private readonly List<(string Prefix, uint InterfaceIndex)> _installedRoutes = [];
     private TaskCompletionSource<(string Ip, string Dns)>? _configSource;
-    private Task? _wifiMonitorTask;
-    private bool _pausedForWifi;
     private bool _running;
 
     public bool IsRunning => _running;
@@ -63,7 +60,6 @@ internal sealed class VpnEngine : IDisposable
             _running = true;
             StatusChanged?.Invoke("Подключено");
             Log?.Invoke($"[WINDOWS] Wintun активен, interface index {_wintun.InterfaceIndex}");
-            _wifiMonitorTask = Task.Run(() => MonitorWifiAutoPauseAsync(settings, token), CancellationToken.None);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -79,25 +75,16 @@ internal sealed class VpnEngine : IDisposable
     public async Task DisconnectAsync()
     {
         CancellationTokenSource? cancellation;
-        Task? wifiMonitor;
         lock (_gate)
         {
             cancellation = _cancellation;
             if (cancellation is null && !_running) return;
             _cancellation = null;
             _running = false;
-            wifiMonitor = _wifiMonitorTask;
-            _wifiMonitorTask = null;
         }
 
         StatusChanged?.Invoke("Отключение…");
         try { cancellation?.Cancel(); } catch { }
-
-        if (wifiMonitor is not null)
-        {
-            try { await wifiMonitor.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
-        }
-        _pausedForWifi = false;
 
         try { _wintun?.Dispose(); } catch (Exception ex) { Log?.Invoke($"[WINDOWS] Wintun stop: {ex.Message}"); }
         _wintun = null;
@@ -186,68 +173,6 @@ internal sealed class VpnEngine : IDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _client = process;
-    }
-
-    private async Task MonitorWifiAutoPauseAsync(AppSettings settings, CancellationToken token)
-    {
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                var shouldPause = settings.AutoPauseOnWifi && IsWifiConnected();
-                if (shouldPause != _pausedForWifi)
-                {
-                    var client = _client;
-                    if (client is not null && !client.HasExited)
-                    {
-                        if (shouldPause)
-                        {
-                            if (TrySendControlCommand(client, "PAUSE"))
-                            {
-                                _pausedForWifi = true;
-                                StatusChanged?.Invoke("Пауза · Wi-Fi");
-                                Log?.Invoke("[WIFI] VPNSL поставлен на паузу: Wi-Fi подключён");
-                            }
-                        }
-                        else
-                        {
-                            if (TrySendControlCommand(client, "RESUME"))
-                            {
-                                _pausedForWifi = false;
-                                StatusChanged?.Invoke("Подключено");
-                                Log?.Invoke("[WIFI] VPNSL возобновлён: Wi-Fi отключён или автопауза выключена");
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                if (!token.IsCancellationRequested) Log?.Invoke($"[WIFI] Проверка сети: {ex.Message}");
-            }
-
-            try { await Task.Delay(1500, token); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private static bool IsWifiConnected()
-    {
-        return NetworkInterface.GetAllNetworkInterfaces().Any(network =>
-        {
-            if (network.NetworkInterfaceType != NetworkInterfaceType.Wireless80211 || network.OperationalStatus != OperationalStatus.Up)
-                return false;
-            try
-            {
-                var properties = network.GetIPProperties();
-                return properties.UnicastAddresses.Any(address => address.Address.AddressFamily == AddressFamily.InterNetwork) &&
-                       properties.GatewayAddresses.Any(gateway => gateway.Address.AddressFamily == AddressFamily.InterNetwork && !gateway.Address.Equals(IPAddress.Any));
-            }
-            catch
-            {
-                return false;
-            }
-        });
     }
 
     private bool TrySendControlCommand(Process client, string command)
