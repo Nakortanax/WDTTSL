@@ -9,26 +9,11 @@ internal static class Program
     {
         BootstrapLog.Write($"Program.Main entered; pid={Environment.ProcessId}; exe={Environment.ProcessPath}; base={AppContext.BaseDirectory}");
 
-        if (args.Any(arg => string.Equals(arg, "--startup-smoke-test", StringComparison.OrdinalIgnoreCase)))
-        {
-            try
-            {
-                var marker = Environment.GetEnvironmentVariable("VPNSL_STARTUP_SMOKE_MARKER");
-                if (string.IsNullOrWhiteSpace(marker))
-                    marker = Path.Combine(Path.GetTempPath(), "VPNSL-startup-smoke-test.ok");
+        if (HasArgument(args, "--startup-smoke-test"))
+            return RunBasicSmokeTest();
 
-                var directory = Path.GetDirectoryName(marker);
-                if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-                File.WriteAllText(marker, $"VPNSL startup smoke test OK {DateTimeOffset.Now:O}{Environment.NewLine}");
-                BootstrapLog.Write($"Startup smoke test succeeded; marker={marker}");
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                BootstrapLog.Write("Startup smoke test failed: " + ex);
-                return 2;
-            }
-        }
+        if (HasArgument(args, "--wpf-smoke-test"))
+            return RunWpfSmokeTest();
 
         try
         {
@@ -44,20 +29,79 @@ internal static class Program
         catch (Exception ex)
         {
             BootstrapLog.Write("FATAL before/during WPF startup: " + ex);
-            try
-            {
-                MessageBox.Show(
-                    "VPNSL не удалось запустить.\n\n" + ex.Message +
-                    "\n\nДиагностика записана в:\n%TEMP%\\VPNSL-startup.log\n%APPDATA%\\VPNSL\\startup.log",
-                    "VPNSL — критическая ошибка запуска",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-            catch
-            {
-            }
-
+            TryShowFatalMessage(ex);
             return 1;
+        }
+    }
+
+    private static int RunBasicSmokeTest()
+    {
+        try
+        {
+            var marker = WriteSmokeMarker("VPNSL basic startup smoke test OK");
+            BootstrapLog.Write($"Basic startup smoke test succeeded; marker={marker}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            BootstrapLog.Write("Basic startup smoke test failed: " + ex);
+            return 2;
+        }
+    }
+
+    private static int RunWpfSmokeTest()
+    {
+        try
+        {
+            BootstrapLog.Write("WPF smoke test: creating App.");
+            var app = new App();
+
+            BootstrapLog.Write("WPF smoke test: loading App.xaml.");
+            app.InitializeComponent();
+
+            BootstrapLog.Write("WPF smoke test: constructing MainWindow and loading MainWindow.xaml.");
+            var window = new MainWindow();
+            GC.KeepAlive(window);
+
+            var marker = WriteSmokeMarker("VPNSL WPF/XAML startup smoke test OK");
+            BootstrapLog.Write($"WPF/XAML smoke test succeeded; marker={marker}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            BootstrapLog.Write("WPF/XAML smoke test failed: " + ex);
+            return 3;
+        }
+    }
+
+    private static bool HasArgument(IEnumerable<string> args, string value) =>
+        args.Any(arg => string.Equals(arg, value, StringComparison.OrdinalIgnoreCase));
+
+    private static string WriteSmokeMarker(string text)
+    {
+        var marker = Environment.GetEnvironmentVariable("VPNSL_STARTUP_SMOKE_MARKER");
+        if (string.IsNullOrWhiteSpace(marker))
+            marker = Path.Combine(Path.GetTempPath(), "VPNSL-startup-smoke-test.ok");
+
+        var directory = Path.GetDirectoryName(marker);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllText(marker, $"{text} {DateTimeOffset.Now:O}{Environment.NewLine}");
+        return marker;
+    }
+
+    private static void TryShowFatalMessage(Exception ex)
+    {
+        try
+        {
+            MessageBox.Show(
+                "VPNSL не удалось запустить.\n\n" + ex.Message +
+                "\n\nДиагностика записана в:\n%TEMP%\\VPNSL-startup.log\n%APPDATA%\\VPNSL\\startup.log",
+                "VPNSL — критическая ошибка запуска",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch
+        {
         }
     }
 }
