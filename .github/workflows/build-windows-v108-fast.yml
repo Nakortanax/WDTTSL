@@ -37,12 +37,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = Get-Content windows-client/VpnEngine.cs -Raw
-          foreach ($forbidden in @('MonitorWifiAutoPauseAsync','IsWifiConnected','"PAUSE"','"RESUME"','_wifiMonitorTask','_pausedForWifi')) {
-            if ($source.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
+          $sources = Get-Content windows-client/VpnEngine.cs,windows-client/MainWindow.xaml.cs,windows-client/AppSettings.cs,windows-client/MainWindow.xaml -Raw
+          foreach ($forbidden in @('MonitorWifiAutoPauseAsync','IsWifiConnected','"PAUSE"','"RESUME"','_wifiMonitorTask','_pausedForWifi','AutoPauseOnWifi','Автопауза при Wi-Fi')) {
+            if ($sources.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
           }
 
-      - name: Build final Windows UI
+      - name: Build and smoke-test Windows UI
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -50,16 +50,28 @@ jobs:
             -c Release `
             -r win-x64 `
             --self-contained true `
-            -p:PublishSingleFile=true `
+            -p:PublishSingleFile=false `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o build/windows-ui
-          $exe = 'build/windows-ui/VPNSL.Windows.exe'
+
+          $exe = (Resolve-Path 'build/windows-ui/VPNSL.Windows.exe').Path
           if (-not (Test-Path $exe)) { throw 'VPNSL.Windows.exe was not built' }
+          if (-not (Test-Path 'build/windows-ui/VPNSL.Windows.dll')) { throw 'Expected multi-file self-contained WPF output is missing' }
+          if (-not (Test-Path 'build/windows-ui/coreclr.dll')) { throw 'Self-contained .NET runtime is missing' }
+
           $exeText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
           if (-not $exeText.Contains('requestedExecutionLevel level="asInvoker"')) {
             throw 'VPNSL.Windows.exe does not contain the required asInvoker manifest'
           }
+
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-publish-startup-smoke.ok'
+          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
+          $p = Start-Process -FilePath $exe -ArgumentList '--startup-smoke-test' -WorkingDirectory (Resolve-Path 'build/windows-ui').Path -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Published VPNSL.Windows.exe smoke test exited with $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'Published VPNSL.Windows.exe did not execute Program.Main smoke test' }
+          Get-Content $marker
 
       - name: Build VPNSL Rust client with static CRT
         shell: pwsh
@@ -98,19 +110,32 @@ jobs:
             if (-not (Test-Path "baseline-portable/VPNSL-1.0.8-Windows-x64/server-assets/$name")) { throw "Baseline server asset missing: $name" }
           }
 
-      - name: Assemble final portable package
+      - name: Assemble and smoke-test portable package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $package = 'dist/VPNSL-1.0.8-Windows-x64'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
-          Copy-Item build/windows-ui/VPNSL.Windows.exe "$package/VPNSL.Windows.exe" -Force
+
+          Copy-Item 'build/windows-ui/*' $package -Recurse -Force
           Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe "$package/client.exe" -Force
+          Copy-Item windows-client/README.md "$package/README-WINDOWS.txt" -Force
           Remove-Item "$package/SHA256SUMS.txt" -Force -ErrorAction SilentlyContinue
-          foreach ($required in @('VPNSL.Windows.exe','client.exe','wintun.dll')) {
+
+          foreach ($required in @('VPNSL.Windows.exe','VPNSL.Windows.dll','VPNSL.Windows.runtimeconfig.json','coreclr.dll','hostfxr.dll','client.exe','wintun.dll')) {
             if (-not (Test-Path "$package/$required")) { throw "Portable package missing: $required" }
           }
+
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-portable-startup-smoke.ok'
+          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
+          $portableExe = (Resolve-Path "$package/VPNSL.Windows.exe").Path
+          $p = Start-Process -FilePath $portableExe -ArgumentList '--startup-smoke-test' -WorkingDirectory (Resolve-Path $package).Path -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Portable VPNSL.Windows.exe smoke test exited with $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'Portable VPNSL.Windows.exe did not execute Program.Main smoke test' }
+          Get-Content $marker
+
           Get-ChildItem $package -File -Recurse |
             Sort-Object FullName |
             ForEach-Object {
@@ -137,7 +162,7 @@ jobs:
       - name: Upload final Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.8-Windows-x64-final
+          name: VPNSL-1.0.8-Windows-x64-startup-diagnostic
           path: |
             dist/VPNSL-1.0.8-Windows-x64.zip
             dist/VPNSL-1.0.8-Windows-x64-Setup.exe
