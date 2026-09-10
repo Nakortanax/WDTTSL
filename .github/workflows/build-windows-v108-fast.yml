@@ -37,7 +37,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $sources = Get-Content windows-client/VpnEngine.cs,windows-client/MainWindow.xaml.cs,windows-client/AppSettings.cs,windows-client/MainWindow.xaml -Raw
+          $sources = (Get-Content windows-client/VpnEngine.cs -Raw) + "`n" +
+                     (Get-Content windows-client/MainWindow.xaml.cs -Raw) + "`n" +
+                     (Get-Content windows-client/AppSettings.cs -Raw) + "`n" +
+                     (Get-Content windows-client/MainWindow.xaml -Raw)
           foreach ($forbidden in @('MonitorWifiAutoPauseAsync','IsWifiConnected','"PAUSE"','"RESUME"','_wifiMonitorTask','_pausedForWifi','AutoPauseOnWifi','Автопауза при Wi-Fi')) {
             if ($sources.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
           }
@@ -65,12 +68,20 @@ jobs:
             throw 'VPNSL.Windows.exe does not contain the required asInvoker manifest'
           }
 
-          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-publish-startup-smoke.ok'
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-publish-basic-smoke.ok'
           Remove-Item $marker -Force -ErrorAction SilentlyContinue
           $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
           $p = Start-Process -FilePath $exe -ArgumentList '--startup-smoke-test' -WorkingDirectory (Resolve-Path 'build/windows-ui').Path -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Published VPNSL.Windows.exe smoke test exited with $($p.ExitCode)" }
-          if (-not (Test-Path $marker)) { throw 'Published VPNSL.Windows.exe did not execute Program.Main smoke test' }
+          if ($p.ExitCode -ne 0) { throw "Published basic smoke test exited with $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'Published EXE did not execute Program.Main basic smoke test' }
+          Get-Content $marker
+
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-publish-wpf-smoke.ok'
+          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
+          $p = Start-Process -FilePath $exe -ArgumentList '--wpf-smoke-test' -WorkingDirectory (Resolve-Path 'build/windows-ui').Path -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Published WPF/XAML smoke test exited with $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'Published EXE failed before completing App.xaml/MainWindow.xaml smoke test' }
           Get-Content $marker
 
       - name: Build VPNSL Rust client with static CRT
@@ -127,13 +138,13 @@ jobs:
             if (-not (Test-Path "$package/$required")) { throw "Portable package missing: $required" }
           }
 
-          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-portable-startup-smoke.ok'
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-portable-wpf-smoke.ok'
           Remove-Item $marker -Force -ErrorAction SilentlyContinue
           $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
           $portableExe = (Resolve-Path "$package/VPNSL.Windows.exe").Path
-          $p = Start-Process -FilePath $portableExe -ArgumentList '--startup-smoke-test' -WorkingDirectory (Resolve-Path $package).Path -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Portable VPNSL.Windows.exe smoke test exited with $($p.ExitCode)" }
-          if (-not (Test-Path $marker)) { throw 'Portable VPNSL.Windows.exe did not execute Program.Main smoke test' }
+          $p = Start-Process -FilePath $portableExe -ArgumentList '--wpf-smoke-test' -WorkingDirectory (Resolve-Path $package).Path -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Portable WPF/XAML smoke test exited with $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'Portable EXE failed App.xaml/MainWindow.xaml startup smoke test' }
           Get-Content $marker
 
           Get-ChildItem $package -File -Recurse |
@@ -162,7 +173,7 @@ jobs:
       - name: Upload final Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.8-Windows-x64-startup-diagnostic
+          name: VPNSL-1.0.8-Windows-x64-wpf-startup-fix
           path: |
             dist/VPNSL-1.0.8-Windows-x64.zip
             dist/VPNSL-1.0.8-Windows-x64-Setup.exe
