@@ -2,12 +2,15 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 
 namespace VPNSL.Windows;
 
 internal sealed class VpnEngine : IDisposable
 {
+    private const int DefaultPeerPort = 46000;
+
     private readonly object _gate = new();
     private readonly object _stdinGate = new();
     private CancellationTokenSource? _cancellation;
@@ -15,6 +18,7 @@ internal sealed class VpnEngine : IDisposable
     private WintunAdapter? _wintun;
     private readonly List<(string Prefix, uint InterfaceIndex)> _installedRoutes = [];
     private TaskCompletionSource<(string Ip, string Dns)>? _configSource;
+    private string? _lastClientError;
     private bool _running;
 
     public bool IsRunning => _running;
@@ -32,14 +36,18 @@ internal sealed class VpnEngine : IDisposable
             sessionCancellation = new CancellationTokenSource();
             _cancellation = sessionCancellation;
             _configSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _lastClientError = null;
         }
 
         var token = sessionCancellation.Token;
         try
         {
             Validate(settings);
+            settings.Peer = NormalizePeer(settings.Peer, settings.ServerPeerPort);
+
             StatusChanged?.Invoke("Подключение");
             Log?.Invoke("[WINDOWS] Запуск VPNSL 1.0.8");
+            Log?.Invoke($"[WINDOWS] Peer: {settings.Peer}");
 
             var physical = await GetPhysicalDefaultRouteAsync(0, token);
             var port = FindFreeUdpPort();
@@ -130,6 +138,9 @@ internal sealed class VpnEngine : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+            StandardInputEncoding = Encoding.UTF8,
             CreateNoWindow = true,
             WorkingDirectory = AppContext.BaseDirectory,
         };
@@ -137,7 +148,7 @@ internal sealed class VpnEngine : IDisposable
         info.Environment["CSQTT_PARENT_PID"] = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
 
         AddArg(info, "--listen", $"127.0.0.1:{port}");
-        AddArg(info, "--peer", settings.Peer.Trim());
+        AddArg(info, "--peer", settings.Peer);
         AddArg(info, "--vk", settings.VkHashes.Trim());
         AddArg(info, "--vk-hash-mode", string.IsNullOrWhiteSpace(settings.VkHashMode) ? "manual" : settings.VkHashMode);
         AddArg(info, "--workers", NormalizeWorkers(settings.Workers).ToString(CultureInfo.InvariantCulture));
@@ -159,15 +170,24 @@ internal sealed class VpnEngine : IDisposable
         process.ErrorDataReceived += (_, e) => HandleClientLine(e.Data);
         process.Exited += (_, _) =>
         {
-            if (!token.IsCancellationRequested)
+            if (token.IsCancellationRequested) return;
+
+            var exitCode = SafeExitCode(process);
+            Log?.Invoke($"[КЛИЕНТ] Процесс завершён, код {exitCode}");
+
+            _ = Task.Run(async () =>
             {
-                Log?.Invoke($"[КЛИЕНТ] Процесс завершён, код {SafeExitCode(process)}");
-                _ = Task.Run(async () =>
-                {
-                    try { await DisconnectAsync(); }
-                    catch (Exception ex) { Log?.Invoke($"[WINDOWS] Очистка после остановки клиента: {ex.Message}"); }
-                });
-            }
+                // Give asynchronous stdout/stderr readers a moment to deliver the final fatal line.
+                await Task.Delay(80).ConfigureAwait(false);
+                var detail = _lastClientError;
+                var message = string.IsNullOrWhiteSpace(detail)
+                    ? $"client.exe завершился с кодом {exitCode} до получения конфигурации туннеля"
+                    : detail;
+
+                _configSource?.TrySetException(new InvalidOperationException(message));
+                try { await DisconnectAsync().ConfigureAwait(false); }
+                catch (Exception ex) { Log?.Invoke($"[WINDOWS] Очистка после остановки клиента: {ex.Message}"); }
+            });
         };
         if (!process.Start()) throw new InvalidOperationException("Не удалось запустить client.exe");
         process.BeginOutputReadLine();
@@ -200,6 +220,12 @@ internal sealed class VpnEngine : IDisposable
         const string prefix = "__CSQTT_EVENT__|";
         if (!line.StartsWith(prefix, StringComparison.Ordinal))
         {
+            if (line.Contains("[ФАТАЛ]", StringComparison.OrdinalIgnoreCase) ||
+                line.Contains("[ОШИБКА]", StringComparison.OrdinalIgnoreCase) ||
+                line.Contains("ошибка", StringComparison.OrdinalIgnoreCase))
+            {
+                _lastClientError = line;
+            }
             Log?.Invoke(line);
             return;
         }
@@ -235,6 +261,7 @@ internal sealed class VpnEngine : IDisposable
                     break;
                 case "ERROR":
                     var message = root.TryGetProperty("message", out var errorMessage) ? errorMessage.GetString().OrEmpty() : "Ошибка VPN";
+                    _lastClientError = message;
                     Log?.Invoke($"[ОШИБКА] {message}");
                     if (root.TryGetProperty("fatal", out var fatal) && fatal.GetBoolean())
                         _configSource?.TrySetException(new InvalidOperationException(message));
@@ -383,6 +410,72 @@ internal sealed class VpnEngine : IDisposable
         dns = parts[1];
         return true;
     }
+
+    private static string NormalizePeer(string rawPeer, int configuredDefaultPort)
+    {
+        var text = rawPeer.Trim();
+        if (text.Length == 0) return text;
+
+        var defaultPort = configuredDefaultPort is >= 1 and <= 65535 ? configuredDefaultPort : DefaultPeerPort;
+
+        if (text.Contains("://", StringComparison.Ordinal))
+        {
+            if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
+                throw new ArgumentException("Некорректный Peer. Укажите IP/домен или IP/домен:порт.");
+
+            var port = uri.IsDefaultPort ? defaultPort : uri.Port;
+            return FormatPeer(uri.Host, port);
+        }
+
+        if (IPAddress.TryParse(text, out var literalAddress))
+            return FormatPeer(literalAddress.ToString(), defaultPort);
+
+        if (text.StartsWith('[', StringComparison.Ordinal))
+        {
+            var close = text.IndexOf(']');
+            if (close <= 1) throw new ArgumentException("Некорректный IPv6 Peer.");
+            var host = text[1..close];
+            if (!IPAddress.TryParse(host, out _)) throw new ArgumentException("Некорректный IPv6 Peer.");
+            var remainder = text[(close + 1)..];
+            if (remainder.Length == 0) return FormatPeer(host, defaultPort);
+            if (!remainder.StartsWith(':') || !TryParsePort(remainder[1..], out var ipv6Port))
+                throw new ArgumentException("Некорректный порт Peer. Допустимо 1–65535.");
+            return FormatPeer(host, ipv6Port);
+        }
+
+        var firstColon = text.IndexOf(':');
+        var lastColon = text.LastIndexOf(':');
+        if (firstColon >= 0)
+        {
+            if (firstColon != lastColon)
+                throw new ArgumentException("IPv6 Peer указывайте в формате [адрес]:порт.");
+
+            var host = text[..firstColon].Trim();
+            var portText = text[(firstColon + 1)..].Trim();
+            if (host.Length == 0) throw new ArgumentException("В Peer отсутствует IP или домен.");
+            if (!TryParsePort(portText, out var port))
+                throw new ArgumentException("Некорректный порт Peer. Допустимо 1–65535.");
+            ValidateHostText(host);
+            return $"{host}:{port}";
+        }
+
+        ValidateHostText(text);
+        return $"{text}:{defaultPort}";
+    }
+
+    private static bool TryParsePort(string value, out int port) =>
+        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out port) && port is >= 1 and <= 65535;
+
+    private static void ValidateHostText(string host)
+    {
+        if (host.Any(char.IsWhiteSpace) || host.Contains('/') || host.Contains('\\') || host.Contains('?') || host.Contains('#'))
+            throw new ArgumentException("Некорректный Peer. Укажите только IP/домен и необязательный порт.");
+    }
+
+    private static string FormatPeer(string host, int port) =>
+        IPAddress.TryParse(host, out var address) && address.AddressFamily == AddressFamily.InterNetworkV6
+            ? $"[{host}]:{port}"
+            : $"{host}:{port}";
 
     private static string ExtractHost(string peer)
     {
