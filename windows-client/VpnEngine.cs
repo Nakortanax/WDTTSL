@@ -13,10 +13,11 @@ internal sealed class VpnEngine : IDisposable
 
     private readonly object _gate = new();
     private readonly object _stdinGate = new();
+    private readonly SemaphoreSlim _routeMutation = new(1, 1);
     private CancellationTokenSource? _cancellation;
     private Process? _client;
     private WintunAdapter? _wintun;
-    private readonly List<(string Prefix, uint InterfaceIndex)> _installedRoutes = [];
+    private readonly List<RouteInstall> _installedRoutes = [];
     private TaskCompletionSource<(string Ip, string Dns)>? _configSource;
     private string? _lastClientError;
     private bool _running;
@@ -56,14 +57,24 @@ internal sealed class VpnEngine : IDisposable
             var config = await _configSource!.Task.WaitAsync(token);
             Log?.Invoke($"[WINDOWS] Получена конфигурация TUN: {config.Ip}/32, DNS {config.Dns}");
 
+            token.ThrowIfCancellationRequested();
             _wintun = new WintunAdapter();
             _wintun.Open();
             await ConfigureAdapterAsync(_wintun.InterfaceIndex, config.Ip, config.Dns, token);
 
             physical = await GetPhysicalDefaultRouteAsync(_wintun.InterfaceIndex, token) ?? physical;
-            await ApplyRoutePolicyAsync(settings, _wintun.InterfaceIndex, physical, token);
-            await ProtectPeerAsync(settings.Peer, physical, token);
+            await _routeMutation.WaitAsync(token);
+            try
+            {
+                await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
+                await ApplyRoutePolicyCoreAsync(settings, _wintun.InterfaceIndex, physical, token);
+            }
+            finally
+            {
+                _routeMutation.Release();
+            }
 
+            token.ThrowIfCancellationRequested();
             _wintun.StartBridge(port, message => Log?.Invoke(message), token);
             _running = true;
             StatusChanged?.Invoke("Подключено");
@@ -80,27 +91,50 @@ internal sealed class VpnEngine : IDisposable
         }
     }
 
+    public async Task ReapplyRoutesAsync(AppSettings settings)
+    {
+        var wintun = _wintun;
+        var cancellation = _cancellation;
+        if (!_running || wintun is null || cancellation is null) return;
+
+        var token = cancellation.Token;
+        await _routeMutation.WaitAsync(token);
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            Log?.Invoke("[ROUTE] Пакетное применение изменённых маршрутов…");
+            await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
+            var physical = await GetPhysicalDefaultRouteAsync(wintun.InterfaceIndex, token);
+            await ApplyRoutePolicyCoreAsync(settings, wintun.InterfaceIndex, physical, token);
+            Log?.Invoke("[ROUTE] Маршруты применены без перезапуска VPN");
+        }
+        finally
+        {
+            _routeMutation.Release();
+        }
+    }
+
     public async Task DisconnectAsync()
     {
         CancellationTokenSource? cancellation;
+        Process? client;
+        WintunAdapter? wintun;
+
         lock (_gate)
         {
             cancellation = _cancellation;
-            if (cancellation is null && !_running) return;
+            if (cancellation is null && !_running && _client is null && _wintun is null) return;
             _cancellation = null;
             _running = false;
+            client = _client;
+            _client = null;
+            wintun = _wintun;
+            _wintun = null;
         }
 
         StatusChanged?.Invoke("Отключение…");
         try { cancellation?.Cancel(); } catch { }
 
-        try { _wintun?.Dispose(); } catch (Exception ex) { Log?.Invoke($"[WINDOWS] Wintun stop: {ex.Message}"); }
-        _wintun = null;
-
-        await RemoveInstalledRoutesAsync();
-
-        var client = _client;
-        _client = null;
         if (client is not null)
         {
             try
@@ -108,14 +142,38 @@ internal sealed class VpnEngine : IDisposable
                 if (!client.HasExited)
                 {
                     TrySendControlCommand(client, "STOP");
-                    if (!client.WaitForExit(1200)) client.Kill(true);
+                    var exitTask = client.WaitForExitAsync();
+                    if (await Task.WhenAny(exitTask, Task.Delay(800)) != exitTask)
+                    {
+                        try { client.Kill(true); } catch { }
+                    }
+                    else
+                    {
+                        await exitTask;
+                    }
                 }
             }
             catch
             {
                 try { client.Kill(true); } catch { }
             }
-            client.Dispose();
+            try { client.Dispose(); } catch { }
+        }
+
+        if (wintun is not null)
+        {
+            try { await Task.Run(wintun.Dispose); }
+            catch (Exception ex) { Log?.Invoke($"[WINDOWS] Wintun stop: {ex.Message}"); }
+        }
+
+        await _routeMutation.WaitAsync(CancellationToken.None);
+        try
+        {
+            await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _routeMutation.Release();
         }
 
         cancellation?.Dispose();
@@ -140,7 +198,7 @@ internal sealed class VpnEngine : IDisposable
             RedirectStandardInput = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
-            StandardInputEncoding = Encoding.UTF8,
+            StandardInputEncoding = new UTF8Encoding(false),
             CreateNoWindow = true,
             WorkingDirectory = AppContext.BaseDirectory,
         };
@@ -279,50 +337,125 @@ internal sealed class VpnEngine : IDisposable
         }
     }
 
-    private async Task ApplyRoutePolicyAsync(
+    private async Task ApplyRoutePolicyCoreAsync(
         AppSettings settings,
         uint tunnelInterface,
         DefaultRoute? physical,
         CancellationToken token)
     {
         var chosen = new Dictionary<string, RouteTarget>(StringComparer.OrdinalIgnoreCase);
-        foreach (var profile in settings.Routes.Where(p => p.Enabled))
+        var enabledProfiles = settings.Routes.Where(p => p.Enabled).ToList();
+
+        foreach (var profile in enabledProfiles)
         {
             foreach (var raw in profile.Routes)
             {
-                if (RoutePolicy.TryNormalize(raw, out var cidr) && !chosen.ContainsKey(cidr))
+                if (!RoutePolicy.TryNormalize(raw, out var cidr)) continue;
+
+                if (!chosen.TryGetValue(cidr, out var existing) ||
+                    (existing != RouteTarget.VPNSL && profile.Target == RouteTarget.VPNSL))
+                {
                     chosen[cidr] = profile.Target;
+                }
             }
         }
 
+        var routes = new List<RouteInstall>();
         foreach (var route in chosen.OrderByDescending(r => PrefixLength(r.Key)))
         {
             if (route.Value == RouteTarget.VPNSL)
             {
-                await AddRouteAsync(route.Key, tunnelInterface, "0.0.0.0", 5, token);
+                routes.Add(new RouteInstall(route.Key, tunnelInterface, "0.0.0.0", 5));
             }
             else if (physical is not null)
             {
-                await AddRouteAsync(route.Key, physical.InterfaceIndex, physical.NextHop, 1, token);
+                routes.Add(new RouteInstall(route.Key, physical.InterfaceIndex, physical.NextHop, 1));
             }
         }
-        Log?.Invoke($"[ROUTE] Активно правил: {chosen.Count}; через VPNSL: {chosen.Count(x => x.Value == RouteTarget.VPNSL)}");
+
+        if (physical is not null)
+        {
+            var host = ExtractHost(settings.Peer);
+            if (host.Length > 0)
+            {
+                try
+                {
+                    var addresses = await Dns.GetHostAddressesAsync(host, token);
+                    foreach (var ip in addresses.Where(x => x.AddressFamily == AddressFamily.InterNetwork))
+                    {
+                        var prefix = $"{ip}/32";
+                        if (!routes.Any(r => r.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) && r.InterfaceIndex == physical.InterfaceIndex))
+                            routes.Add(new RouteInstall(prefix, physical.InterfaceIndex, physical.NextHop, 0));
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Log?.Invoke($"[ROUTE] Не удалось защитить адрес peer от зацикливания: {ex.Message}");
+                }
+            }
+        }
+
+        await InstallRoutesBulkAsync(routes, token);
+
+        var vpnCount = chosen.Count(x => x.Value == RouteTarget.VPNSL);
+        var physicalCount = chosen.Count - vpnCount;
+        Log?.Invoke($"[ROUTE] Активно правил: {chosen.Count}; через VPNSL: {vpnCount}; через обычную сеть: {physicalCount}");
+
+        foreach (var profile in enabledProfiles)
+            Log?.Invoke($"[ROUTE] Профиль «{profile.Name}»: {profile.Target}, маршрутов {profile.Routes.Count}");
     }
 
-    private async Task ProtectPeerAsync(string peer, DefaultRoute? physical, CancellationToken token)
+    private async Task InstallRoutesBulkAsync(IReadOnlyCollection<RouteInstall> routes, CancellationToken token)
     {
-        if (physical is null) return;
-        var host = ExtractHost(peer);
-        if (host.Length == 0) return;
+        if (routes.Count == 0) return;
+
+        Log?.Invoke($"[ROUTE] Пакетная установка маршрутов: {routes.Count}");
+        var script = new StringBuilder();
+        script.AppendLine("$ErrorActionPreference = 'Stop'");
+        foreach (var route in routes)
+        {
+            var prefix = Ps(route.Prefix);
+            var nextHop = Ps(route.NextHop);
+            script.AppendLine($"Remove-NetRoute -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -Confirm:$false -ErrorAction SilentlyContinue");
+            script.AppendLine($"New-NetRoute -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -NextHop '{nextHop}' -RouteMetric {route.Metric} -PolicyStore ActiveStore -ErrorAction Stop | Out-Null");
+        }
+
+        await PowerShellScriptAsync(script.ToString(), token);
+        _installedRoutes.AddRange(routes);
+        Log?.Invoke($"[ROUTE] Пакетная установка завершена: {routes.Count}");
+    }
+
+    private async Task RemoveInstalledRoutesCoreAsync(CancellationToken token)
+    {
+        if (_installedRoutes.Count == 0) return;
+
+        var installed = _installedRoutes
+            .DistinctBy(r => (r.Prefix.ToUpperInvariant(), r.InterfaceIndex))
+            .ToArray();
+        _installedRoutes.Clear();
+
+        Log?.Invoke($"[ROUTE] Пакетное удаление маршрутов: {installed.Length}");
+        var script = new StringBuilder();
+        script.AppendLine("$ErrorActionPreference = 'SilentlyContinue'");
+
+        var groupNumber = 0;
+        foreach (var group in installed.GroupBy(r => r.InterfaceIndex))
+        {
+            var table = "$wanted" + groupNumber++;
+            script.AppendLine($"{table} = @{{}}");
+            foreach (var route in group)
+                script.AppendLine($"{table}['{Ps(route.Prefix)}'] = $true");
+            script.AppendLine($"Get-NetRoute -InterfaceIndex {group.Key} -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ {table}.ContainsKey($_.DestinationPrefix) }} | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue");
+        }
+
         try
         {
-            var addresses = await Dns.GetHostAddressesAsync(host, token);
-            foreach (var ip in addresses.Where(x => x.AddressFamily == AddressFamily.InterNetwork))
-                await AddRouteAsync($"{ip}/32", physical.InterfaceIndex, physical.NextHop, 0, token);
+            await PowerShellScriptAsync(script.ToString(), token);
+            Log?.Invoke($"[ROUTE] Пакетное удаление завершено: {installed.Length}");
         }
         catch (Exception ex)
         {
-            Log?.Invoke($"[ROUTE] Не удалось защитить адрес peer от зацикливания: {ex.Message}");
+            Log?.Invoke($"[ROUTE] Ошибка пакетного удаления: {ex.Message}");
         }
     }
 
@@ -334,30 +467,6 @@ internal sealed class VpnEngine : IDisposable
             $"Set-DnsClientServerAddress -InterfaceIndex {index} -ServerAddresses @('{Ps(dns)}') -ErrorAction Stop; " +
             $"Set-NetIPInterface -InterfaceIndex {index} -AddressFamily IPv4 -InterfaceMetric 5 -ErrorAction SilentlyContinue";
         await PowerShellAsync(command, token);
-    }
-
-    private async Task AddRouteAsync(string prefix, uint index, string nextHop, int metric, CancellationToken token)
-    {
-        var command =
-            $"Remove-NetRoute -DestinationPrefix '{Ps(prefix)}' -InterfaceIndex {index} -Confirm:$false -ErrorAction SilentlyContinue; " +
-            $"New-NetRoute -DestinationPrefix '{Ps(prefix)}' -InterfaceIndex {index} -NextHop '{Ps(nextHop)}' -RouteMetric {metric} -PolicyStore ActiveStore -ErrorAction Stop | Out-Null";
-        await PowerShellAsync(command, token);
-        _installedRoutes.Add((prefix, index));
-    }
-
-    private async Task RemoveInstalledRoutesAsync()
-    {
-        foreach (var route in _installedRoutes.AsEnumerable().Reverse())
-        {
-            try
-            {
-                await PowerShellAsync(
-                    $"Remove-NetRoute -DestinationPrefix '{Ps(route.Prefix)}' -InterfaceIndex {route.InterfaceIndex} -Confirm:$false -ErrorAction SilentlyContinue",
-                    CancellationToken.None);
-            }
-            catch { }
-        }
-        _installedRoutes.Clear();
     }
 
     private static async Task<DefaultRoute?> GetPhysicalDefaultRouteAsync(uint excludedInterface, CancellationToken token)
@@ -388,7 +497,9 @@ internal sealed class VpnEngine : IDisposable
         info.ArgumentList.Add("Bypass");
         info.ArgumentList.Add("-Command");
         info.ArgumentList.Add(command);
+
         using var process = Process.Start(info) ?? throw new InvalidOperationException("Не удалось запустить PowerShell");
+        using var registration = token.Register(() => TryKill(process));
         var stdoutTask = process.StandardOutput.ReadToEndAsync(token);
         var stderrTask = process.StandardError.ReadToEndAsync(token);
         await process.WaitForExitAsync(token);
@@ -398,12 +509,52 @@ internal sealed class VpnEngine : IDisposable
         return stdout;
     }
 
+    private static async Task<string> PowerShellScriptAsync(string script, CancellationToken token)
+    {
+        var info = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,
+            StandardInputEncoding = new UTF8Encoding(false),
+            CreateNoWindow = true,
+        };
+        info.ArgumentList.Add("-NoProfile");
+        info.ArgumentList.Add("-NonInteractive");
+        info.ArgumentList.Add("-ExecutionPolicy");
+        info.ArgumentList.Add("Bypass");
+        info.ArgumentList.Add("-Command");
+        info.ArgumentList.Add("-");
+
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("Не удалось запустить PowerShell");
+        using var registration = token.Register(() => TryKill(process));
+        await process.StandardInput.WriteAsync(script.AsMemory(), token);
+        process.StandardInput.Close();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(token);
+        var stderrTask = process.StandardError.ReadToEndAsync(token);
+        await process.WaitForExitAsync(token);
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+        if (process.ExitCode != 0) throw new InvalidOperationException(stderr.Trim().Length > 0 ? stderr.Trim() : $"PowerShell exit {process.ExitCode}");
+        return stdout;
+    }
+
+    private static void TryKill(Process process)
+    {
+        try { if (!process.HasExited) process.Kill(true); } catch { }
+    }
+
     private static bool TryParseTunConfig(string value, out string ip, out string dns)
     {
         ip = dns = "";
         if (!value.StartsWith("TUNCONF:", StringComparison.Ordinal)) return false;
         var parts = value[8..].Split(':', 3);
-        if (parts.Length < 2 || !IPAddress.TryParse(parts[0], out var ipAddress) || ipAddress.AddressFamily != AddressFamily.InterNetwork || !IPAddress.TryParse(parts[1], out _))
+        if (parts.Length < 2 ||
+            !IPAddress.TryParse(parts[0], out var ipAddress) ||
+            ipAddress.AddressFamily != AddressFamily.InterNetwork ||
+            !IPAddress.TryParse(parts[1], out var dnsAddress) ||
+            dnsAddress.AddressFamily != AddressFamily.InterNetwork)
             return false;
         ip = parts[0];
         dns = parts[1];
@@ -505,9 +656,14 @@ internal sealed class VpnEngine : IDisposable
         if (settings.VkHashMode == "auto_js") throw new NotSupportedException("Auto JS пока не включён в Windows UI. Выберите ручные хеши VK.");
     }
 
-    public void Dispose() => DisconnectAsync().GetAwaiter().GetResult();
+    public void Dispose()
+    {
+        try { DisconnectAsync().GetAwaiter().GetResult(); } catch { }
+        _routeMutation.Dispose();
+    }
 
     private sealed record DefaultRoute(uint InterfaceIndex, string NextHop);
+    private sealed record RouteInstall(string Prefix, uint InterfaceIndex, string NextHop, int Metric);
 }
 
 internal static class StringExtensions
