@@ -16,7 +16,10 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private string? _generatedHost;
     private List<string> _generatedAddresses = [];
-    private bool _closing;
+    private bool _shutdownStarted;
+    private bool _allowClose;
+    private bool _disconnectBusy;
+    private bool _refreshingRoutes;
 
     public MainWindow()
     {
@@ -25,9 +28,9 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         _timer.Tick += (_, _) => UptimeText.Text = _uptime.Elapsed.ToString(@"hh\:mm\:ss");
 
-        _engine.Log += line => Dispatcher.Invoke(() => AppendLog(line));
-        _engine.StatusChanged += status => Dispatcher.Invoke(() => SetStatus(status));
-        _engine.StatsChanged += (active, up, down) => Dispatcher.Invoke(() =>
+        _engine.Log += line => Ui(() => AppendLog(line));
+        _engine.StatusChanged += status => Ui(() => SetStatus(status));
+        _engine.StatsChanged += (active, up, down) => Ui(() =>
         {
             WorkersStatus.Text = active.ToString();
             UpStatus.Text = FormatBytes(up);
@@ -76,14 +79,30 @@ public partial class MainWindow : Window
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
-        ConnectButton.IsEnabled = false;
-        try
+        if (_disconnectBusy || _shutdownStarted) return;
+
+        if (_engine.IsActive)
         {
-            if (_engine.IsActive)
+            _disconnectBusy = true;
+            ConnectButton.IsEnabled = false;
+            try
             {
                 await _engine.DisconnectAsync();
-                return;
             }
+            catch (Exception ex)
+            {
+                AppendLog($"[ОШИБКА] Отключение: {ex.Message}");
+            }
+            finally
+            {
+                _disconnectBusy = false;
+                if (!_shutdownStarted) ConnectButton.IsEnabled = true;
+            }
+            return;
+        }
+
+        try
+        {
             SaveSettingsFromUi();
             await _engine.ConnectAsync(_settings);
         }
@@ -94,11 +113,8 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AppendLog($"[ОШИБКА] {ex.Message}");
-            MessageBox.Show(this, ex.Message, "VPNSL", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            ConnectButton.IsEnabled = true;
+            if (!_shutdownStarted)
+                MessageBox.Show(this, ex.Message, "VPNSL", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -127,7 +143,7 @@ public partial class MainWindow : Window
         RouteCidrBox.Clear();
         RefreshRoutes();
         AppendLog($"[ROUTE] Добавлен {name}: {cidr}");
-        await RestartIfConnectedAsync();
+        await ApplyRoutesIfConnectedAsync();
     }
 
     private async void ImportRoutes_Click(object sender, RoutedEventArgs e)
@@ -143,17 +159,20 @@ public partial class MainWindow : Window
             var text = ReadRouteText(dialog.FileName);
             var routes = RoutePolicy.ParseRouteFile(text);
             if (routes.Count == 0) { MessageBox.Show(this, "Маршруты в файле не найдены.", "VPNSL"); return; }
+
+            var fileName = Path.GetFileName(dialog.FileName);
+            _settings.Routes.RemoveAll(x => string.Equals(x.Name, fileName, StringComparison.OrdinalIgnoreCase));
             _settings.Routes.Insert(0, new RouteProfile
             {
-                Name = Path.GetFileName(dialog.FileName),
+                Name = fileName,
                 Enabled = true,
                 Target = RouteTarget.VPNSL,
                 Routes = routes,
             });
             SettingsStore.Save(_settings);
             RefreshRoutes();
-            AppendLog($"[ROUTE] Импортировано: {routes.Count} из {Path.GetFileName(dialog.FileName)}");
-            await RestartIfConnectedAsync();
+            AppendLog($"[ROUTE] Импортировано: {routes.Count} из {fileName} → VPNSL");
+            await ApplyRoutesIfConnectedAsync();
         }
         catch (Exception ex)
         {
@@ -175,9 +194,9 @@ public partial class MainWindow : Window
 
     private async void RouteEnabled_Changed(object sender, RoutedEventArgs e)
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded || _refreshingRoutes) return;
         SettingsStore.Save(_settings);
-        await RestartIfConnectedAsync();
+        await ApplyRoutesIfConnectedAsync();
     }
 
     private async void ChangeRouteTarget_Click(object sender, RoutedEventArgs e)
@@ -188,7 +207,8 @@ public partial class MainWindow : Window
         profile.Target = profile.Target == RouteTarget.VPNSL ? RouteTarget.MOBILE : RouteTarget.VPNSL;
         SettingsStore.Save(_settings);
         RefreshRoutes();
-        await RestartIfConnectedAsync();
+        AppendLog($"[ROUTE] Профиль «{profile.Name}» → {profile.Target}");
+        await ApplyRoutesIfConnectedAsync();
     }
 
     private async void DeleteRoute_Click(object sender, RoutedEventArgs e)
@@ -197,7 +217,7 @@ public partial class MainWindow : Window
         _settings.Routes.RemoveAll(x => x.Id == id);
         SettingsStore.Save(_settings);
         RefreshRoutes();
-        await RestartIfConnectedAsync();
+        await ApplyRoutesIfConnectedAsync();
     }
 
     private async void ResolveSite_Click(object sender, RoutedEventArgs e)
@@ -255,6 +275,7 @@ public partial class MainWindow : Window
         if (status == "Подключено")
         {
             ConnectButton.Content = "Отключить";
+            ConnectButton.IsEnabled = !_shutdownStarted;
             if (!_uptime.IsRunning)
             {
                 _uptime.Start();
@@ -264,6 +285,7 @@ public partial class MainWindow : Window
         else if (status == "Отключено")
         {
             ConnectButton.Content = "Подключить";
+            ConnectButton.IsEnabled = !_shutdownStarted;
             _timer.Stop();
             _uptime.Reset();
             UptimeText.Text = "00:00:00";
@@ -272,17 +294,27 @@ public partial class MainWindow : Window
         else if (status.StartsWith("Отключение", StringComparison.Ordinal))
         {
             ConnectButton.Content = "Отключение…";
+            ConnectButton.IsEnabled = false;
         }
         else
         {
             ConnectButton.Content = "Отменить подключение";
+            ConnectButton.IsEnabled = !_shutdownStarted;
         }
     }
 
     private void RefreshRoutes()
     {
-        RoutesList.ItemsSource = null;
-        RoutesList.ItemsSource = _settings.Routes;
+        _refreshingRoutes = true;
+        try
+        {
+            RoutesList.ItemsSource = null;
+            RoutesList.ItemsSource = _settings.Routes;
+        }
+        finally
+        {
+            _refreshingRoutes = false;
+        }
     }
 
     private void RefreshConnectionSummary()
@@ -295,24 +327,34 @@ public partial class MainWindow : Window
             .Count().ToString();
     }
 
-    private async Task RestartIfConnectedAsync()
+    private async Task ApplyRoutesIfConnectedAsync()
     {
-        if (!_engine.IsRunning) return;
+        if (!_engine.IsRunning)
+        {
+            if (_engine.IsActive)
+                AppendLog("[ROUTE] Маршруты сохранены и будут использованы при завершении текущего подключения");
+            return;
+        }
+
         try
         {
-            AppendLog("[ROUTE] Применение изменённых маршрутов…");
-            await _engine.DisconnectAsync();
-            await _engine.ConnectAsync(_settings);
+            await _engine.ReapplyRoutesAsync(_settings);
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog("[ROUTE] Применение маршрутов отменено");
         }
         catch (Exception ex)
         {
-            AppendLog($"[ROUTE] Ошибка переподключения: {ex.Message}");
+            AppendLog($"[ROUTE] Ошибка применения: {ex.Message}");
+            if (!_shutdownStarted)
+                MessageBox.Show(this, ex.Message, "Ошибка маршрутизации", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     private void AppendLog(string line)
     {
-        if (string.IsNullOrWhiteSpace(line)) return;
+        if (string.IsNullOrWhiteSpace(line) || _shutdownStarted) return;
         LogBox.AppendText($"{DateTime.Now:HH:mm:ss} {line}{Environment.NewLine}");
         if (LogBox.Text.Length > 500_000) LogBox.Text = LogBox.Text[^350_000..];
         LogBox.ScrollToEnd();
@@ -325,18 +367,55 @@ public partial class MainWindow : Window
         Process.Start(new ProcessStartInfo("https://github.com/Nakortanax/WDTTSL") { UseShellExecute = true });
     }
 
-    private async void MainWindow_Closing(object? sender, CancelEventArgs e)
+    private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        if (_closing) return;
+        if (_allowClose) return;
+
         e.Cancel = true;
-        _closing = true;
+        if (_shutdownStarted) return;
+
+        _shutdownStarted = true;
+        ConnectButton.IsEnabled = false;
+        _timer.Stop();
+        _ = ShutdownAndCloseAsync();
+    }
+
+    private async Task ShutdownAndCloseAsync()
+    {
         try
         {
             SaveSettingsFromUi();
             await _engine.DisconnectAsync();
         }
-        catch { }
-        Close();
+        catch (Exception ex)
+        {
+            BootstrapLog.Write("Shutdown cleanup error: " + ex);
+        }
+        finally
+        {
+            _allowClose = true;
+            if (!Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    Closing -= MainWindow_Closing;
+                    Close();
+                }), DispatcherPriority.ApplicationIdle);
+            }
+        }
+    }
+
+    private void Ui(Action action)
+    {
+        if (_shutdownStarted || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(action, DispatcherPriority.Background);
+        }
     }
 
     private static string ComboText(ComboBox combo, string fallback) =>
