@@ -66,7 +66,28 @@ impl Events {
     }
 
     pub fn config(&self, config: &str) {
-        self.emit("CONFIG", &serde_json::json!({"config": config}));
+        // The protocol can return more than one DNS server, for example:
+        // TUNCONF:10.66.67.16:1.1.1.1,1.0.0.1
+        // Older Windows-shell builds expect the CONFIG event to contain one
+        // parseable DNS address. Keep the full value in normal client logs,
+        // but expose the first DNS in the compatibility event so the Windows
+        // shell can finish Wintun setup instead of waiting forever.
+        let event_config = config
+            .strip_prefix("TUNCONF:")
+            .and_then(|value| value.split_once(':'))
+            .and_then(|(ip, dns_values)| {
+                dns_values
+                    .split([',', ';', ' '])
+                    .map(str::trim)
+                    .find(|dns| !dns.is_empty())
+                    .map(|dns| format!("TUNCONF:{ip}:{dns}"))
+            })
+            .unwrap_or_else(|| config.to_owned());
+
+        self.emit("CONFIG", &serde_json::json!({
+            "config": event_config,
+            "config_full": config
+        }));
     }
 
     pub fn error(&self, code: &str, message: &str, fatal: bool) {
