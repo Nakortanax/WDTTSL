@@ -177,7 +177,6 @@ internal sealed class VpnEngine : IDisposable
 
             _ = Task.Run(async () =>
             {
-                // Give asynchronous stdout/stderr readers a moment to deliver the final fatal line.
                 await Task.Delay(80).ConfigureAwait(false);
                 var detail = _lastClientError;
                 var message = string.IsNullOrWhiteSpace(detail)
@@ -430,7 +429,7 @@ internal sealed class VpnEngine : IDisposable
         if (IPAddress.TryParse(text, out var literalAddress))
             return FormatPeer(literalAddress.ToString(), defaultPort);
 
-        if (text.StartsWith('[', StringComparison.Ordinal))
+        if (text.StartsWith("[", StringComparison.Ordinal))
         {
             var close = text.IndexOf(']');
             if (close <= 1) throw new ArgumentException("Некорректный IPv6 Peer.");
