@@ -8,6 +8,7 @@ namespace VPNSL.Windows;
 internal sealed class WintunAdapter : IDisposable
 {
     private const uint RingCapacity = 0x400000; // 4 MiB
+    private const int SocketBufferBytes = 4 * 1024 * 1024;
     private const int ErrorNoMoreItems = 259;
     private const uint WaitTimeout = 258;
 
@@ -17,8 +18,12 @@ internal sealed class WintunAdapter : IDisposable
     private CancellationTokenSource? _bridgeCancellation;
     private Task? _readTask;
     private Task? _writeTask;
+    private long _tunToClientPackets;
+    private long _clientToTunPackets;
 
     public uint InterfaceIndex { get; private set; }
+    public long TunToClientPackets => Interlocked.Read(ref _tunToClientPackets);
+    public long ClientToTunPackets => Interlocked.Read(ref _clientToTunPackets);
 
     public void Open()
     {
@@ -44,10 +49,40 @@ internal sealed class WintunAdapter : IDisposable
 
         _bridgeCancellation = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
         _udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        _udp.Client.SendBufferSize = SocketBufferBytes;
+        _udp.Client.ReceiveBufferSize = SocketBufferBytes;
         _udp.Connect(IPAddress.Loopback, clientPort);
         var token = _bridgeCancellation.Token;
-        _readTask = Task.Run(() => PumpTunToClientAsync(_udp, log, token), token);
-        _writeTask = Task.Run(() => PumpClientToTunAsync(_udp, log, token), token);
+        log($"[WINTUN] Локальный мост запущен → 127.0.0.1:{clientPort}");
+
+        _readTask = Task.Run(
+            () => RunPumpAsync("TUN→client", () => PumpTunToClientAsync(_udp, log, token), log, token),
+            CancellationToken.None);
+        _writeTask = Task.Run(
+            () => RunPumpAsync("client→TUN", () => PumpClientToTunAsync(_udp, log, token), log, token),
+            CancellationToken.None);
+    }
+
+    private static async Task RunPumpAsync(
+        string name,
+        Func<Task> pump,
+        Action<string> log,
+        CancellationToken token)
+    {
+        try
+        {
+            await pump().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            log($"[WINTUN] Мост {name} остановлен с ошибкой: {ex.Message}");
+        }
     }
 
     private async Task PumpTunToClientAsync(UdpClient udp, Action<string> log, CancellationToken token)
@@ -68,6 +103,8 @@ internal sealed class WintunAdapter : IDisposable
                         var managed = new byte[length];
                         Marshal.Copy(packet, managed, 0, length);
                         await udp.SendAsync(managed, token);
+                        if (Interlocked.Increment(ref _tunToClientPackets) == 1)
+                            log($"[WINTUN] Первый исходящий IP-пакет передан в client.exe ({length} байт)");
                     }
                 }
                 finally
@@ -121,6 +158,8 @@ internal sealed class WintunAdapter : IDisposable
             }
             Marshal.Copy(result.Buffer, 0, packet, result.Buffer.Length);
             WintunSendPacket(_session, packet);
+            if (Interlocked.Increment(ref _clientToTunPackets) == 1)
+                log($"[WINTUN] Первый входящий IP-пакет получен от client.exe ({result.Buffer.Length} байт)");
         }
     }
 
@@ -187,7 +226,7 @@ internal sealed class WintunAdapter : IDisposable
     private static extern void WintunReleaseReceivePacket(IntPtr session, IntPtr packet);
 
     [DllImport("wintun.dll", SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-    private static extern IntPtr WintunAllocateSendPacket(IntPtr session, uint packetSize);
+    private static extern IntPtr WintunAllocateSendPacket(IntPtr session, uint capacity);
 
     [DllImport("wintun.dll", CallingConvention = CallingConvention.StdCall)]
     private static extern void WintunSendPacket(IntPtr session, IntPtr packet);
