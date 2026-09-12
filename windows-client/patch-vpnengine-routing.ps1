@@ -6,13 +6,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $text = Get-Content -LiteralPath $InputPath -Raw -Encoding UTF8
 
-# Keep the Wintun interface eligible for a real default route if the standard
-# def1 (/1 + /1) form is removed by the local Windows networking stack.
+# Keep Wintun eligible for an explicit default route if Windows removes the
+# usual def1 (/1 + /1) pair after NetTCPIP/CIM creates it.
 $text = $text.Replace(
     'Set-NetIPInterface -InterfaceIndex {index} -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric 5 -ErrorAction Stop',
     'Set-NetIPInterface -InterfaceIndex {index} -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric 5 -IgnoreDefaultRoutes Disabled -ErrorAction Stop')
 
-# Also clean a fallback /0 route left from an interrupted previous session.
+# Clean a possible fallback /0 left from an interrupted previous session too.
 $text = $text.Replace(
     '$wanted = @(''0.0.0.0/1'',''128.0.0.0/1''); ',
     '$wanted = @(''0.0.0.0/0'',''0.0.0.0/1'',''128.0.0.0/1''); ')
@@ -20,9 +20,9 @@ $text = $text.Replace(
 $replacement = @'
     private async Task VerifyFullTunnelRoutesAsync(uint tunnelInterface, CancellationToken token)
     {
-        // Give Windows a separate-process observation window. On some Windows
-        // systems New-NetRoute reports the /1 entries inside the creating CIM
-        // session, but the networking stack removes them immediately afterwards.
+        // Observe the route table from a fresh PowerShell process. The affected
+        // Windows hosts briefly report the /1 routes in the creating CIM process
+        // and then remove them immediately afterwards.
         await Task.Delay(450, token);
         var lastOutput = await QueryFullTunnelRouteStateAsync(tunnelInterface, token);
         if (lastOutput.Contains("FULL_TUNNEL_OK", StringComparison.Ordinal))
@@ -31,14 +31,23 @@ $replacement = @'
             return;
         }
 
-        Log?.Invoke($"[ROUTE] PowerShell split-default исчез после создания ({lastOutput}); переключаемся на netsh/IP Helper путь");
+        Log?.Invoke($"[ROUTE] PowerShell split-default исчез после создания ({lastOutput}); пробуем native netsh route");
 
-        // netsh uses the native IP Helper route path instead of the NetTCPIP CIM
-        // provider. This avoids machines where ActiveStore CIM routes briefly
-        // appear and then vanish after the creating PowerShell process exits.
+        // netsh reaches the native IP Helper routing path instead of creating the
+        // route through the NetTCPIP CIM provider. nexthop is intentionally
+        // omitted: these are on-link routes through the Wintun interface.
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            await InstallSplitDefaultWithNetshAsync(tunnelInterface, token);
+            try
+            {
+                await InstallSplitDefaultWithNetshAsync(tunnelInterface, token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log?.Invoke($"[ROUTE] netsh split-default не создан: {ex.Message}");
+                break;
+            }
+
             await Task.Delay(400, token);
             lastOutput = await QueryFullTunnelRouteStateAsync(tunnelInterface, token);
             if (lastOutput.Contains("FULL_TUNNEL_OK", StringComparison.Ordinal))
@@ -50,14 +59,26 @@ $replacement = @'
             Log?.Invoke($"[ROUTE] netsh split-default не удержался ({lastOutput}), попытка {attempt}/3");
         }
 
-        // Final fallback: keep the physical default route intact, but add a
-        // lower-metric Wintun default. TURN/control and user «Напрямую» routes
-        // are /32 or otherwise more specific, so they continue to bypass VPN.
-        Log?.Invoke("[ROUTE] /1 маршруты удаляются Windows; резервный режим: 0.0.0.0/0 через Wintun");
-        await InstallDefaultRouteWithNetshAsync(tunnelInterface, token);
+        // Final fallback. Keep the physical default route in place, but install a
+        // lower-cost Wintun default. TURN/control /32 routes and user «Напрямую»
+        // prefixes remain more specific and therefore continue to use the
+        // physical interface.
+        Log?.Invoke("[ROUTE] /1 маршруты не удерживаются; резервный full-tunnel: 0.0.0.0/0 через Wintun");
 
+        string? lastInstallError = null;
         for (var attempt = 1; attempt <= 4; attempt++)
         {
+            try
+            {
+                await InstallDefaultRouteWithNetshAsync(tunnelInterface, token);
+                lastInstallError = null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastInstallError = ex.Message;
+                Log?.Invoke($"[ROUTE] Резервный default-route: ошибка установки {attempt}/4: {ex.Message}");
+            }
+
             await Task.Delay(400, token);
             lastOutput = await QueryFullTunnelRouteStateAsync(tunnelInterface, token);
             if (lastOutput.Contains("DEFAULT_TUNNEL_OK", StringComparison.Ordinal))
@@ -73,13 +94,13 @@ $replacement = @'
                 Log?.Invoke($"[ROUTE] Full-tunnel подтверждён резервным default-route на ifIndex {tunnelInterface}: {lastOutput}");
                 return;
             }
-
-            if (attempt < 4)
-                await InstallDefaultRouteWithNetshAsync(tunnelInterface, token);
         }
 
+        var detail = string.IsNullOrWhiteSpace(lastInstallError)
+            ? lastOutput
+            : $"{lastOutput}; INSTALL={lastInstallError}";
         throw new InvalidOperationException(
-            $"Windows не удержал full-tunnel маршруты VPNSL на ifIndex {tunnelInterface}. Диагностика: {lastOutput}");
+            $"Windows не удержал full-tunnel маршруты VPNSL на ifIndex {tunnelInterface}. Диагностика: {detail}");
     }
 
     private static async Task<string> QueryFullTunnelRouteStateAsync(uint tunnelInterface, CancellationToken token)
@@ -99,9 +120,9 @@ $replacement = @'
         var command =
             $"& netsh.exe interface ipv4 delete route prefix=0.0.0.0/1 interface={tunnelInterface} store=active 2>$null | Out-Null; " +
             $"& netsh.exe interface ipv4 delete route prefix=128.0.0.0/1 interface={tunnelInterface} store=active 2>$null | Out-Null; " +
-            $"& netsh.exe interface ipv4 add route prefix=0.0.0.0/1 interface={tunnelInterface} nexthop=0.0.0.0 metric=5 publish=no validlifetime=infinite preferredlifetime=infinite store=active | Out-Null; " +
+            $"& netsh.exe interface ipv4 add route prefix=0.0.0.0/1 interface={tunnelInterface} metric=5 publish=no validlifetime=infinite preferredlifetime=infinite store=active | Out-Null; " +
             "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; " +
-            $"& netsh.exe interface ipv4 add route prefix=128.0.0.0/1 interface={tunnelInterface} nexthop=0.0.0.0 metric=5 publish=no validlifetime=infinite preferredlifetime=infinite store=active | Out-Null; " +
+            $"& netsh.exe interface ipv4 add route prefix=128.0.0.0/1 interface={tunnelInterface} metric=5 publish=no validlifetime=infinite preferredlifetime=infinite store=active | Out-Null; " +
             "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }";
         await PowerShellAsync(command, token);
     }
@@ -111,7 +132,7 @@ $replacement = @'
         var command =
             $"Set-NetIPInterface -InterfaceIndex {tunnelInterface} -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric 1 -IgnoreDefaultRoutes Disabled -ErrorAction Stop; " +
             $"& netsh.exe interface ipv4 delete route prefix=0.0.0.0/0 interface={tunnelInterface} store=active 2>$null | Out-Null; " +
-            $"& netsh.exe interface ipv4 add route prefix=0.0.0.0/0 interface={tunnelInterface} nexthop=0.0.0.0 metric=1 publish=no validlifetime=infinite preferredlifetime=infinite store=active | Out-Null; " +
+            $"& netsh.exe interface ipv4 add route prefix=0.0.0.0/0 interface={tunnelInterface} metric=1 publish=no validlifetime=infinite preferredlifetime=infinite store=active | Out-Null; " +
             "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }";
         await PowerShellAsync(command, token);
     }
