@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace VPNSL.Windows;
@@ -53,9 +54,11 @@ public partial class MainWindow : Window
         SetCombo(VkAuthBox, _settings.VkAuthMode);
         SetCombo(CaptchaBox, _settings.CaptchaMode);
         SetCombo(FingerprintBox, _settings.Fingerprint);
-        SetCombo(RouteTargetBox, "VPNSL");
+        SetComboByTag(RouteTargetBox, "VPNSL");
         RefreshRoutes();
         RefreshConnectionSummary();
+        HighlightNavigation("connection");
+        SetStatus(_engine.IsRunning ? "Подключено" : "Отключено");
     }
 
     private void SaveSettingsFromUi()
@@ -135,7 +138,7 @@ public partial class MainWindow : Window
         {
             Name = name,
             Enabled = true,
-            Target = ComboText(RouteTargetBox, "VPNSL") == "MOBILE" ? RouteTarget.MOBILE : RouteTarget.VPNSL,
+            Target = ComboTag(RouteTargetBox, "VPNSL") == "MOBILE" ? RouteTarget.MOBILE : RouteTarget.VPNSL,
             Routes = [cidr],
         });
         SettingsStore.Save(_settings);
@@ -196,6 +199,7 @@ public partial class MainWindow : Window
     {
         if (!IsLoaded || _refreshingRoutes) return;
         SettingsStore.Save(_settings);
+        RefreshRoutes();
         await ApplyRoutesIfConnectedAsync();
     }
 
@@ -207,7 +211,7 @@ public partial class MainWindow : Window
         profile.Target = profile.Target == RouteTarget.VPNSL ? RouteTarget.MOBILE : RouteTarget.VPNSL;
         SettingsStore.Save(_settings);
         RefreshRoutes();
-        AppendLog($"[ROUTE] Профиль «{profile.Name}» → {profile.Target}");
+        AppendLog($"[ROUTE] Профиль «{profile.Name}» → {profile.TargetDisplay}");
         await ApplyRoutesIfConnectedAsync();
     }
 
@@ -255,7 +259,9 @@ public partial class MainWindow : Window
     private void Nav_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button) return;
-        ShowPage(button.Tag?.ToString() ?? "connection");
+        var page = button.Tag?.ToString() ?? "connection";
+        ShowPage(page);
+        HighlightNavigation(page);
     }
 
     private void ShowPage(string page)
@@ -268,10 +274,35 @@ public partial class MainWindow : Window
         InfoPage.Visibility = page == "info" ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void HighlightNavigation(string page)
+    {
+        foreach (var button in NavBar.Children.OfType<Button>())
+        {
+            var active = string.Equals(button.Tag?.ToString(), page, StringComparison.OrdinalIgnoreCase);
+            button.Background = BrushResource(active ? "PrimaryDark" : "Surface2");
+            button.Foreground = BrushResource(active ? "Text" : "Muted");
+            button.BorderBrush = BrushResource(active ? "Primary" : "Border");
+            button.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+    }
+
     private void SetStatus(string status)
     {
         HeaderStatus.Text = status;
         ConnectionStatus.Text = status;
+
+        var brushKey = status switch
+        {
+            "Подключено" => "Success",
+            "Отключено" => "Muted",
+            _ when status.StartsWith("Отключение", StringComparison.Ordinal) => "Warning",
+            _ => "PrimarySoft",
+        };
+        var statusBrush = BrushResource(brushKey);
+        HeaderStatus.Foreground = statusBrush;
+        HeaderStatusDot.Fill = statusBrush;
+        ConnectionStatus.Foreground = statusBrush;
+
         if (status == "Подключено")
         {
             ConnectButton.Content = "Отключить";
@@ -421,12 +452,25 @@ public partial class MainWindow : Window
     private static string ComboText(ComboBox combo, string fallback) =>
         (combo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? combo.Text.NullIfWhiteSpace() ?? fallback;
 
+    private static string ComboTag(ComboBox combo, string fallback) =>
+        (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? fallback;
+
     private static void SetCombo(ComboBox combo, string value)
     {
         foreach (var item in combo.Items.OfType<ComboBoxItem>())
             if (string.Equals(item.Content?.ToString(), value, StringComparison.OrdinalIgnoreCase)) { combo.SelectedItem = item; return; }
         combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
     }
+
+    private static void SetComboByTag(ComboBox combo, string value)
+    {
+        foreach (var item in combo.Items.OfType<ComboBoxItem>())
+            if (string.Equals(item.Tag?.ToString(), value, StringComparison.OrdinalIgnoreCase)) { combo.SelectedItem = item; return; }
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+    }
+
+    private Brush BrushResource(string key) =>
+        TryFindResource(key) as Brush ?? Brushes.White;
 
     private static string ReadRouteText(string path)
     {
