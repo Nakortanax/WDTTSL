@@ -1,4 +1,4 @@
-name: Build VPNSL 1.0.8 Windows Fast Final
+name: Build and Release VPNSL 1.0.0 Windows
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
       - '.github/workflows/build-windows-v108-fast.yml'
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -44,6 +44,17 @@ jobs:
           foreach ($forbidden in @('MonitorWifiAutoPauseAsync','IsWifiConnected','"PAUSE"','"RESUME"','_wifiMonitorTask','_pausedForWifi','AutoPauseOnWifi','Автопауза при Wi-Fi')) {
             if ($sources.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
           }
+
+      - name: Verify Windows version 1.0.0
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Get-Content windows-client/VPNSL.Windows.csproj -Raw
+          $xaml = Get-Content windows-client/MainWindow.xaml -Raw
+          $installer = Get-Content windows-client/installer.iss -Raw
+          if (-not $project.Contains('<Version>1.0.0</Version>')) { throw 'Project version is not 1.0.0' }
+          if (-not $xaml.Contains('Windows • 1.0.0')) { throw 'UI version is not 1.0.0' }
+          if (-not $installer.Contains('#define MyAppVersion "1.0.0"')) { throw 'Installer version is not 1.0.0' }
 
       - name: Build and smoke-test Windows UI
         shell: pwsh
@@ -98,7 +109,7 @@ jobs:
           }
           Get-FileHash $client -Algorithm SHA256 | Format-List
 
-      - name: Download verified run 21 package baseline
+      - name: Download verified server-assets baseline
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -125,7 +136,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = 'dist/VPNSL-1.0.8-Windows-x64'
+          $package = 'dist/VPNSL-1.0.0-Windows-x64'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
 
@@ -153,7 +164,7 @@ jobs:
               $relative = $_.FullName.Substring((Resolve-Path $package).Path.Length + 1).Replace('\','/')
               "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $relative
             } | Set-Content "$package/SHA256SUMS.txt"
-          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.8-Windows-x64.zip -Force
+          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.0-Windows-x64.zip -Force
 
       - name: Build final Windows installer EXE
         shell: pwsh
@@ -166,16 +177,50 @@ jobs:
           if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler was not found' }
           & $iscc windows-client/installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-          $installer = 'dist/VPNSL-1.0.8-Windows-x64-Setup.exe'
+          $installer = 'dist/VPNSL-1.0.0-Windows-x64-Setup.exe'
           if (-not (Test-Path $installer)) { throw 'Installer EXE was not built' }
           Get-FileHash $installer -Algorithm SHA256 | Format-List
 
       - name: Upload final Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.8-Windows-x64-wpf-startup-fix
+          name: VPNSL-1.0.0-Windows-x64
           path: |
-            dist/VPNSL-1.0.8-Windows-x64.zip
-            dist/VPNSL-1.0.8-Windows-x64-Setup.exe
+            dist/VPNSL-1.0.0-Windows-x64.zip
+            dist/VPNSL-1.0.0-Windows-x64-Setup.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release v1.0.0
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $repo = $env:GITHUB_REPOSITORY
+          $tag = 'v1.0.0'
+          $setup = 'dist/VPNSL-1.0.0-Windows-x64-Setup.exe'
+          $portable = 'dist/VPNSL-1.0.0-Windows-x64.zip'
+          $notes = @'
+          Windows release VPNSL 1.0.0.
+
+          - Полностью тёмный интерфейс Windows.
+          - Контрастные поля и выпадающие списки без системного белого оформления.
+          - Маршруты отображаются как «Через VPNSL» / «Напрямую».
+          - Сохранены исправления Wintun, TUNCONF, маршрутизации и корректного завершения.
+          - Windows x64, self-contained .NET 8.
+          '@
+
+          gh release view $tag --repo $repo *> $null
+          $releaseExists = ($LASTEXITCODE -eq 0)
+          if ($releaseExists) {
+            gh release upload $tag $setup $portable --clobber --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to update release assets' }
+            gh release edit $tag --title 'VPNSL Windows 1.0.0' --notes $notes --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to update release metadata' }
+          }
+          else {
+            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.0' --notes $notes --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to create GitHub release v1.0.0' }
+          }
