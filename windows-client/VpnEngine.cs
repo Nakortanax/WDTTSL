@@ -11,16 +11,21 @@ internal sealed class VpnEngine : IDisposable
 {
     private const int DefaultPeerPort = 46000;
     private const int RouteBatchSize = 128;
+    private const string TurnConnectMarker = "[TURN] Подключение к ";
 
     private readonly object _gate = new();
     private readonly object _stdinGate = new();
+    private readonly object _transportGate = new();
     private readonly SemaphoreSlim _routeMutation = new(1, 1);
+    private readonly HashSet<string> _transportHosts = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _cancellation;
     private Process? _client;
     private WintunAdapter? _wintun;
     private readonly List<RouteInstall> _installedRoutes = [];
     private TaskCompletionSource<(string Ip, string Dns)>? _configSource;
+    private DefaultRoute? _physicalDefault;
     private string? _lastClientError;
+    private bool _fullTunnelReady;
     private bool _running;
 
     public bool IsRunning => _running;
@@ -39,7 +44,10 @@ internal sealed class VpnEngine : IDisposable
             _cancellation = sessionCancellation;
             _configSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _lastClientError = null;
+            _fullTunnelReady = false;
+            _physicalDefault = null;
         }
+        lock (_transportGate) _transportHosts.Clear();
 
         var token = sessionCancellation.Token;
         try
@@ -48,10 +56,19 @@ internal sealed class VpnEngine : IDisposable
             settings.Peer = NormalizePeer(settings.Peer, settings.ServerPeerPort);
 
             StatusChanged?.Invoke("Подключение");
-            Log?.Invoke("[WINDOWS] Запуск VPNSL 1.0.8");
+            Log?.Invoke("[WINDOWS] Запуск VPNSL");
             Log?.Invoke($"[WINDOWS] Peer: {settings.Peer}");
+            Log?.Invoke("[ROUTE] Режим: весь IPv4-трафик через VPNSL; профили «Напрямую» работают как исключения");
 
-            var physical = await GetPhysicalDefaultRouteAsync(0, token);
+            var physical = await GetPhysicalDefaultRouteAsync(0, token)
+                ?? throw new InvalidOperationException(
+                    "Не найден физический IPv4-маршрут по умолчанию. Full-tunnel нельзя включить безопасно.");
+            _physicalDefault = physical;
+
+            RegisterTransportHost(ExtractHost(settings.Peer));
+            if (!string.IsNullOrWhiteSpace(settings.TurnHost))
+                RegisterTransportHost(ExtractTransportHost(settings.TurnHost));
+
             var port = FindFreeUdpPort();
             StartClient(settings, port, token);
 
@@ -64,18 +81,31 @@ internal sealed class VpnEngine : IDisposable
             await ConfigureAdapterAsync(_wintun.InterfaceIndex, config.Ip, config.Dns, token);
 
             physical = await GetPhysicalDefaultRouteAsync(_wintun.InterfaceIndex, token) ?? physical;
+            _physicalDefault = physical;
 
             token.ThrowIfCancellationRequested();
             _wintun.StartBridge(port, message => Log?.Invoke(message), token);
+
+            var routeSettings = CloneRoutingSettings(settings);
+            await _routeMutation.WaitAsync(token);
+            try
+            {
+                await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
+                Log?.Invoke("[ROUTE] Включение full-tunnel и пользовательских правил…");
+                await ApplyRoutePolicyCoreAsync(routeSettings, _wintun.InterfaceIndex, physical, token);
+            }
+            finally
+            {
+                _routeMutation.Release();
+            }
+
+            _fullTunnelReady = true;
             _running = true;
             StatusChanged?.Invoke("Подключено");
             Log?.Invoke($"[WINDOWS] Wintun активен, interface index {_wintun.InterfaceIndex}");
+            Log?.Invoke("[ROUTE] Full-tunnel активен: весь IPv4-трафик по умолчанию направлен через VPNSL");
 
-            var routeSettings = CloneRoutingSettings(settings);
-            var tunnelInterface = _wintun.InterfaceIndex;
-            _ = Task.Run(
-                () => ApplyRoutesInBackgroundAsync(routeSettings, tunnelInterface, physical, token),
-                CancellationToken.None);
+            _ = Task.Run(EnsureAllTransportBypassesAsync, CancellationToken.None);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -85,38 +115,6 @@ internal sealed class VpnEngine : IDisposable
         {
             await DisconnectAsync();
             throw;
-        }
-    }
-
-    private async Task ApplyRoutesInBackgroundAsync(
-        AppSettings settings,
-        uint tunnelInterface,
-        DefaultRoute? physical,
-        CancellationToken token)
-    {
-        try
-        {
-            await _routeMutation.WaitAsync(token);
-            try
-            {
-                token.ThrowIfCancellationRequested();
-                await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
-                Log?.Invoke("[ROUTE] Фоновое применение маршрутов начато");
-                await ApplyRoutePolicyCoreAsync(settings, tunnelInterface, physical, token);
-                Log?.Invoke("[ROUTE] Фоновое применение маршрутов завершено");
-            }
-            finally
-            {
-                _routeMutation.Release();
-            }
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            Log?.Invoke("[ROUTE] Применение маршрутов отменено");
-        }
-        catch (Exception ex)
-        {
-            Log?.Invoke($"[ROUTE] Ошибка применения маршрутов: {ex.Message}");
         }
     }
 
@@ -134,7 +132,10 @@ internal sealed class VpnEngine : IDisposable
             token.ThrowIfCancellationRequested();
             Log?.Invoke("[ROUTE] Применение изменённых маршрутов…");
             await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
-            var physical = await GetPhysicalDefaultRouteAsync(wintun.InterfaceIndex, token);
+            var physical = await GetPhysicalDefaultRouteAsync(wintun.InterfaceIndex, token)
+                ?? _physicalDefault
+                ?? throw new InvalidOperationException("Не найден физический маршрут для исключений из VPN.");
+            _physicalDefault = physical;
             await ApplyRoutePolicyCoreAsync(snapshot, wintun.InterfaceIndex, physical, token);
             Log?.Invoke("[ROUTE] Маршруты применены без перезапуска VPN");
         }
@@ -142,6 +143,8 @@ internal sealed class VpnEngine : IDisposable
         {
             _routeMutation.Release();
         }
+
+        _ = Task.Run(EnsureAllTransportBypassesAsync, CancellationToken.None);
     }
 
     public async Task DisconnectAsync()
@@ -156,6 +159,7 @@ internal sealed class VpnEngine : IDisposable
             if (cancellation is null && !_running && _client is null && _wintun is null) return;
             _cancellation = null;
             _running = false;
+            _fullTunnelReady = false;
             client = _client;
             _client = null;
             wintun = _wintun;
@@ -164,6 +168,16 @@ internal sealed class VpnEngine : IDisposable
 
         StatusChanged?.Invoke("Отключение…");
         try { cancellation?.Cancel(); } catch { }
+
+        await _routeMutation.WaitAsync(CancellationToken.None);
+        try
+        {
+            await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
+        }
+        finally
+        {
+            _routeMutation.Release();
+        }
 
         if (client is not null)
         {
@@ -196,16 +210,8 @@ internal sealed class VpnEngine : IDisposable
             catch (Exception ex) { Log?.Invoke($"[WINDOWS] Wintun stop: {ex.Message}"); }
         }
 
-        await _routeMutation.WaitAsync(CancellationToken.None);
-        try
-        {
-            await RemoveInstalledRoutesCoreAsync(CancellationToken.None);
-        }
-        finally
-        {
-            _routeMutation.Release();
-        }
-
+        _physicalDefault = null;
+        lock (_transportGate) _transportHosts.Clear();
         cancellation?.Dispose();
         _configSource?.TrySetCanceled();
         _configSource = null;
@@ -307,6 +313,7 @@ internal sealed class VpnEngine : IDisposable
         const string prefix = "__CSQTT_EVENT__|";
         if (!line.StartsWith(prefix, StringComparison.Ordinal))
         {
+            TryCaptureTransportEndpoint(line);
             if (line.Contains("[ФАТАЛ]", StringComparison.OrdinalIgnoreCase) ||
                 line.Contains("[ОШИБКА]", StringComparison.OrdinalIgnoreCase) ||
                 line.Contains("ошибка", StringComparison.OrdinalIgnoreCase))
@@ -367,10 +374,81 @@ internal sealed class VpnEngine : IDisposable
         }
     }
 
+    private void TryCaptureTransportEndpoint(string line)
+    {
+        var marker = line.IndexOf(TurnConnectMarker, StringComparison.Ordinal);
+        if (marker < 0) return;
+        var endpoint = line[(marker + TurnConnectMarker.Length)..].Trim();
+        var host = ExtractTransportHost(endpoint);
+        RegisterTransportHost(host);
+    }
+
+    private void RegisterTransportHost(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return;
+        var added = false;
+        lock (_transportGate) added = _transportHosts.Add(host.Trim());
+        if (!added) return;
+
+        Log?.Invoke($"[ROUTE] Транспорт VPNSL: {host}");
+        if (_fullTunnelReady)
+            _ = Task.Run(() => EnsureTransportBypassAsync(host), CancellationToken.None);
+    }
+
+    private async Task EnsureAllTransportBypassesAsync()
+    {
+        string[] hosts;
+        lock (_transportGate) hosts = _transportHosts.ToArray();
+        foreach (var host in hosts)
+            await EnsureTransportBypassAsync(host).ConfigureAwait(false);
+    }
+
+    private async Task EnsureTransportBypassAsync(string host)
+    {
+        if (!_fullTunnelReady) return;
+        var physical = _physicalDefault;
+        if (physical is null) return;
+
+        IReadOnlyList<IPAddress> addresses;
+        try
+        {
+            addresses = await ResolveIpv4Async(host, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"[ROUTE] Не удалось разрешить транспорт {host}: {ex.Message}");
+            return;
+        }
+
+        if (addresses.Count == 0) return;
+        await _routeMutation.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            if (!_fullTunnelReady) return;
+            var additions = addresses
+                .Select(ip => new RouteInstall($"{ip}/32", physical.InterfaceIndex, physical.NextHop, 0))
+                .Where(route => !_installedRoutes.Any(existing =>
+                    existing.InterfaceIndex == route.InterfaceIndex &&
+                    string.Equals(existing.Prefix, route.Prefix, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            if (additions.Length == 0) return;
+            await InstallRoutesBulkAsync(additions, CancellationToken.None).ConfigureAwait(false);
+            Log?.Invoke($"[ROUTE] Транспортный обход добавлен: {host} → {string.Join(", ", additions.Select(x => x.Prefix))}");
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"[ROUTE] Ошибка транспортного обхода {host}: {ex.Message}");
+        }
+        finally
+        {
+            _routeMutation.Release();
+        }
+    }
+
     private async Task ApplyRoutePolicyCoreAsync(
         AppSettings settings,
         uint tunnelInterface,
-        DefaultRoute? physical,
+        DefaultRoute physical,
         CancellationToken token)
     {
         var chosen = new Dictionary<string, RouteTarget>(StringComparer.OrdinalIgnoreCase);
@@ -381,37 +459,57 @@ internal sealed class VpnEngine : IDisposable
             foreach (var raw in profile.Routes)
             {
                 if (!RoutePolicy.TryNormalize(raw, out var cidr)) continue;
+
+                // Full-tunnel is already the default. On an exact duplicate,
+                // a direct rule is the meaningful exception and therefore wins.
                 if (!chosen.TryGetValue(cidr, out var existing) ||
-                    (existing != RouteTarget.VPNSL && profile.Target == RouteTarget.VPNSL))
+                    (existing != RouteTarget.MOBILE && profile.Target == RouteTarget.MOBILE))
+                {
                     chosen[cidr] = profile.Target;
+                }
             }
         }
 
         var routes = new List<RouteInstall>();
-
-        if (physical is not null)
+        var protectedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var peerHost = ExtractHost(settings.Peer);
+        if (peerHost.Length > 0) protectedHosts.Add(peerHost);
+        if (!string.IsNullOrWhiteSpace(settings.TurnHost))
         {
-            var host = ExtractHost(settings.Peer);
-            if (host.Length > 0)
+            var turnHost = ExtractTransportHost(settings.TurnHost);
+            if (turnHost.Length > 0) protectedHosts.Add(turnHost);
+        }
+        lock (_transportGate)
+        {
+            foreach (var host in _transportHosts) protectedHosts.Add(host);
+        }
+
+        foreach (var host in protectedHosts)
+        {
+            try
             {
-                try
-                {
-                    var addresses = await Dns.GetHostAddressesAsync(host, token);
-                    foreach (var ip in addresses.Where(x => x.AddressFamily == AddressFamily.InterNetwork))
-                        routes.Add(new RouteInstall($"{ip}/32", physical.InterfaceIndex, physical.NextHop, 0));
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Log?.Invoke($"[ROUTE] Не удалось защитить адрес peer от зацикливания: {ex.Message}");
-                }
+                var addresses = await ResolveIpv4Async(host, token);
+                foreach (var ip in addresses)
+                    routes.Add(new RouteInstall($"{ip}/32", physical.InterfaceIndex, physical.NextHop, 0));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log?.Invoke($"[ROUTE] Не удалось защитить транспортный адрес {host}: {ex.Message}");
             }
         }
+
+        // Two /1 routes are more specific than the physical 0.0.0.0/0 route.
+        // This keeps the physical default route intact while making VPNSL the
+        // default path for all public IPv4 traffic. More specific direct rules
+        // (/8, /24, /32, etc.) still override these routes naturally.
+        routes.Add(new RouteInstall("0.0.0.0/1", tunnelInterface, "0.0.0.0", 5));
+        routes.Add(new RouteInstall("128.0.0.0/1", tunnelInterface, "0.0.0.0", 5));
 
         foreach (var route in chosen.OrderByDescending(r => PrefixLength(r.Key)))
         {
             if (route.Value == RouteTarget.VPNSL)
                 routes.Add(new RouteInstall(route.Key, tunnelInterface, "0.0.0.0", 5));
-            else if (physical is not null)
+            else
                 routes.Add(new RouteInstall(route.Key, physical.InterfaceIndex, physical.NextHop, 1));
         }
 
@@ -421,12 +519,12 @@ internal sealed class VpnEngine : IDisposable
 
         await InstallRoutesBulkAsync(routes, token);
 
-        var vpnCount = chosen.Count(x => x.Value == RouteTarget.VPNSL);
-        var physicalCount = chosen.Count - vpnCount;
-        Log?.Invoke($"[ROUTE] Активно правил: {chosen.Count}; через VPNSL: {vpnCount}; через обычную сеть: {physicalCount}");
+        var explicitVpnCount = chosen.Count(x => x.Value == RouteTarget.VPNSL);
+        var directCount = chosen.Count - explicitVpnCount;
+        Log?.Invoke($"[ROUTE] Full-tunnel IPv4: ON; явных правил через VPNSL: {explicitVpnCount}; исключений «Напрямую»: {directCount}");
 
         foreach (var profile in enabledProfiles)
-            Log?.Invoke($"[ROUTE] Профиль «{profile.Name}»: {profile.Target}, маршрутов {profile.Routes.Count}");
+            Log?.Invoke($"[ROUTE] Профиль «{profile.Name}»: {profile.TargetDisplay}, маршрутов {profile.Routes.Count}");
     }
 
     private async Task InstallRoutesBulkAsync(IReadOnlyList<RouteInstall> routes, CancellationToken token)
@@ -444,8 +542,6 @@ internal sealed class VpnEngine : IDisposable
         {
             token.ThrowIfCancellationRequested();
             var batch = chunk.ToArray();
-
-            // Track before execution so a cancellation in the middle of a batch can still be cleaned up.
             _installedRoutes.AddRange(batch);
 
             var script = new StringBuilder();
@@ -676,9 +772,45 @@ internal sealed class VpnEngine : IDisposable
         return text.Split(':')[0];
     }
 
+    private static string ExtractTransportHost(string endpoint)
+    {
+        var text = endpoint.Trim().Trim('"', '\'');
+        if (text.StartsWith("turns:", StringComparison.OrdinalIgnoreCase)) text = text[6..];
+        else if (text.StartsWith("turn:", StringComparison.OrdinalIgnoreCase)) text = text[5..];
+        if (text.StartsWith("//", StringComparison.Ordinal)) text = text[2..];
+        var query = text.IndexOf('?');
+        if (query >= 0) text = text[..query];
+
+        if (text.StartsWith("[", StringComparison.Ordinal))
+        {
+            var close = text.IndexOf(']');
+            return close > 1 ? text[1..close] : "";
+        }
+
+        if (IPAddress.TryParse(text, out _)) return text;
+        if (text.Count(ch => ch == ':') == 1)
+        {
+            var colon = text.LastIndexOf(':');
+            if (colon > 0) return text[..colon];
+        }
+        return text;
+    }
+
+    private static async Task<IReadOnlyList<IPAddress>> ResolveIpv4Async(string host, CancellationToken token)
+    {
+        if (IPAddress.TryParse(host, out var literal))
+            return literal.AddressFamily == AddressFamily.InterNetwork ? [literal] : [];
+
+        return (await Dns.GetHostAddressesAsync(host, token))
+            .Where(address => address.AddressFamily == AddressFamily.InterNetwork)
+            .Distinct()
+            .ToArray();
+    }
+
     private static AppSettings CloneRoutingSettings(AppSettings settings) => new()
     {
         Peer = settings.Peer,
+        TurnHost = settings.TurnHost,
         Routes = settings.Routes.Select(profile => new RouteProfile
         {
             Id = profile.Id,
