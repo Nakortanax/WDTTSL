@@ -592,11 +592,14 @@ internal sealed class VpnEngine : IDisposable
         routes.Add(new RouteInstall("0.0.0.0/1", tunnelInterface, "0.0.0.0", 5));
         routes.Add(new RouteInstall("128.0.0.0/1", tunnelInterface, "0.0.0.0", 5));
 
+        // In full-tunnel mode explicit VPNSL rules are already covered by the
+        // split-default routes. Installing hundreds/thousands of the same VPN
+        // prefixes is redundant and can make the Windows route table churn.
+        // Only direct profiles need concrete routes because they are exceptions
+        // that must stay on the physical interface.
         foreach (var route in chosen.OrderByDescending(r => PrefixLength(r.Key)))
         {
-            if (route.Value == RouteTarget.VPNSL)
-                routes.Add(new RouteInstall(route.Key, tunnelInterface, "0.0.0.0", 5));
-            else
+            if (route.Value == RouteTarget.MOBILE)
                 routes.Add(new RouteInstall(route.Key, physical.InterfaceIndex, physical.NextHop, 1));
         }
 
@@ -609,7 +612,7 @@ internal sealed class VpnEngine : IDisposable
 
         var explicitVpnCount = chosen.Count(x => x.Value == RouteTarget.VPNSL);
         var directCount = chosen.Count - explicitVpnCount;
-        Log?.Invoke($"[ROUTE] Full-tunnel IPv4: ON; TURN IPv4-обходов: {transportIpv4Routes}; явных правил через VPNSL: {explicitVpnCount}; исключений «Напрямую»: {directCount}");
+        Log?.Invoke($"[ROUTE] Full-tunnel IPv4: ON; TURN IPv4-обходов: {transportIpv4Routes}; явных правил через VPNSL: {explicitVpnCount} (уже покрыты full-tunnel); исключений «Напрямую»: {directCount}");
 
         foreach (var profile in enabledProfiles)
             Log?.Invoke($"[ROUTE] Профиль «{profile.Name}»: {profile.TargetDisplay}, маршрутов {profile.Routes.Count}");
@@ -639,11 +642,15 @@ internal sealed class VpnEngine : IDisposable
             {
                 var prefix = Ps(route.Prefix);
                 var nextHop = Ps(route.NextHop);
-                script.AppendLine($"  $existing = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -ErrorAction SilentlyContinue | Where-Object {{ $_.NextHop -eq '{nextHop}' }})");
+                var onLink = string.Equals(route.NextHop, "0.0.0.0", StringComparison.Ordinal);
+                var match = onLink
+                    ? $"Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -ErrorAction SilentlyContinue"
+                    : $"Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -ErrorAction SilentlyContinue | Where-Object {{ $_.NextHop -eq '{nextHop}' }}";
+                script.AppendLine($"  $existing = @({match})");
                 script.AppendLine("  if ($existing.Count -eq 0) {");
                 script.AppendLine($"    New-NetRoute -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -NextHop '{nextHop}' -RouteMetric {route.Metric} -PolicyStore ActiveStore -ErrorAction Stop | Out-Null");
                 script.AppendLine("  }");
-                script.AppendLine($"  $verify = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '{prefix}' -InterfaceIndex {route.InterfaceIndex} -ErrorAction SilentlyContinue | Where-Object {{ $_.NextHop -eq '{nextHop}' }})");
+                script.AppendLine($"  $verify = @({match})");
                 script.AppendLine($"  if ($verify.Count -eq 0) {{ throw 'Маршрут {prefix} через ifIndex {route.InterfaceIndex} не появился в таблице Windows' }}");
             }
             script.AppendLine("} catch {");
@@ -661,15 +668,37 @@ internal sealed class VpnEngine : IDisposable
 
     private async Task VerifyFullTunnelRoutesAsync(uint tunnelInterface, CancellationToken token)
     {
-        var command =
-            $"$a = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/1' -InterfaceIndex {tunnelInterface} -ErrorAction SilentlyContinue | Where-Object {{ $_.NextHop -eq '0.0.0.0' }}); " +
-            $"$b = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '128.0.0.0/1' -InterfaceIndex {tunnelInterface} -ErrorAction SilentlyContinue | Where-Object {{ $_.NextHop -eq '0.0.0.0' }}); " +
-            "if ($a.Count -eq 0 -or $b.Count -eq 0) { Write-Error 'Windows не установил split-default маршруты VPNSL'; exit 1 }; " +
-            "Write-Output 'FULL_TUNNEL_OK'";
-        var output = await PowerShellAsync(command, token);
-        if (!output.Contains("FULL_TUNNEL_OK", StringComparison.Ordinal))
-            throw new InvalidOperationException("Не удалось подтвердить full-tunnel маршруты Windows.");
-        Log?.Invoke($"[ROUTE] Split-default маршруты подтверждены на ifIndex {tunnelInterface}");
+        string lastOutput = "";
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var command =
+                $"$a = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/1' -InterfaceIndex {tunnelInterface} -ErrorAction SilentlyContinue); " +
+                $"$b = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '128.0.0.0/1' -InterfaceIndex {tunnelInterface} -ErrorAction SilentlyContinue); " +
+                "if ($a.Count -gt 0 -and $b.Count -gt 0) { " +
+                "Write-Output ('FULL_TUNNEL_OK|A=' + (($a | Select-Object -ExpandProperty NextHop) -join ',') + '|B=' + (($b | Select-Object -ExpandProperty NextHop) -join ',')); exit 0 }; " +
+                "Write-Output ('FULL_TUNNEL_MISSING|A=' + $a.Count + '|B=' + $b.Count)";
+
+            lastOutput = (await PowerShellAsync(command, token)).Trim();
+            if (lastOutput.Contains("FULL_TUNNEL_OK", StringComparison.Ordinal))
+            {
+                Log?.Invoke($"[ROUTE] Split-default маршруты подтверждены на ifIndex {tunnelInterface}: {lastOutput}");
+                return;
+            }
+
+            if (attempt == 3) break;
+
+            Log?.Invoke($"[ROUTE] Split-default ещё не стабилизировался ({lastOutput}), повтор {attempt}/2");
+            await Task.Delay(250, token);
+            await InstallRoutesBulkAsync(
+                [
+                    new RouteInstall("0.0.0.0/1", tunnelInterface, "0.0.0.0", 5),
+                    new RouteInstall("128.0.0.0/1", tunnelInterface, "0.0.0.0", 5),
+                ],
+                token);
+        }
+
+        throw new InvalidOperationException(
+            $"Windows не удержал split-default маршруты VPNSL на ifIndex {tunnelInterface}. Диагностика: {lastOutput}");
     }
 
     private async Task RemoveInstalledRoutesCoreAsync(CancellationToken token)
