@@ -1,0 +1,18 @@
+<Project>
+  <Target Name="GenerateVpnEngineRoutingFix"
+          BeforeTargets="CoreCompile"
+          Condition="'$(DesignTimeBuild)' != 'true'"
+          Inputs="$(MSBuildProjectDirectory)\VpnEngine.cs;$(MSBuildProjectDirectory)\patch-vpnengine-routing.ps1"
+          Outputs="$(MSBuildProjectDirectory)\$(IntermediateOutputPath)VpnEngine.RoutingFixed.cs">
+    <PropertyGroup>
+      <_VpnEngineRoutingFixed>$(IntermediateOutputPath)VpnEngine.RoutingFixed.cs</_VpnEngineRoutingFixed>
+    </PropertyGroup>
+
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\patch-vpnengine-routing.ps1&quot; -InputPath &quot;$(MSBuildProjectDirectory)\VpnEngine.cs&quot; -OutputPath &quot;$(MSBuildProjectDirectory)\$(_VpnEngineRoutingFixed)&quot;" />
+
+    <ItemGroup>
+      <Compile Remove="VpnEngine.cs" />
+      <Compile Include="$(_VpnEngineRoutingFixed)" />
+    </ItemGroup>
+  </Target>
+</Project>
