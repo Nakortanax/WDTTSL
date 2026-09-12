@@ -54,7 +54,7 @@ public partial class MainWindow : Window
         SetCombo(VkAuthBox, _settings.VkAuthMode);
         SetCombo(CaptchaBox, _settings.CaptchaMode);
         SetCombo(FingerprintBox, _settings.Fingerprint);
-        SetComboByTag(RouteTargetBox, "VPNSL");
+        SetComboByTag(RouteTargetBox, "MOBILE");
         RefreshRoutes();
         RefreshConnectionSummary();
         HighlightNavigation("connection");
@@ -134,18 +134,19 @@ public partial class MainWindow : Window
         if (name.Length == 0) { MessageBox.Show(this, "Введите подпись ресурса.", "VPNSL"); return; }
         if (!RoutePolicy.TryNormalize(raw, out var cidr)) { MessageBox.Show(this, "Некорректный IPv4/CIDR.", "VPNSL"); return; }
 
+        var target = ComboTag(RouteTargetBox, "MOBILE") == "VPNSL" ? RouteTarget.VPNSL : RouteTarget.MOBILE;
         _settings.Routes.Insert(0, new RouteProfile
         {
             Name = name,
             Enabled = true,
-            Target = ComboTag(RouteTargetBox, "VPNSL") == "MOBILE" ? RouteTarget.MOBILE : RouteTarget.VPNSL,
+            Target = target,
             Routes = [cidr],
         });
         SettingsStore.Save(_settings);
         RouteNameBox.Clear();
         RouteCidrBox.Clear();
         RefreshRoutes();
-        AppendLog($"[ROUTE] Добавлен {name}: {cidr}");
+        AppendLog($"[ROUTE] Добавлен {name}: {cidr} → {(target == RouteTarget.VPNSL ? "VPNSL" : "Напрямую")}");
         await ApplyRoutesIfConnectedAsync();
     }
 
@@ -163,18 +164,19 @@ public partial class MainWindow : Window
             var routes = RoutePolicy.ParseRouteFile(text);
             if (routes.Count == 0) { MessageBox.Show(this, "Маршруты в файле не найдены.", "VPNSL"); return; }
 
+            var target = ComboTag(RouteTargetBox, "MOBILE") == "VPNSL" ? RouteTarget.VPNSL : RouteTarget.MOBILE;
             var fileName = Path.GetFileName(dialog.FileName);
             _settings.Routes.RemoveAll(x => string.Equals(x.Name, fileName, StringComparison.OrdinalIgnoreCase));
             _settings.Routes.Insert(0, new RouteProfile
             {
                 Name = fileName,
                 Enabled = true,
-                Target = RouteTarget.VPNSL,
+                Target = target,
                 Routes = routes,
             });
             SettingsStore.Save(_settings);
             RefreshRoutes();
-            AppendLog($"[ROUTE] Импортировано: {routes.Count} из {fileName} → VPNSL");
+            AppendLog($"[ROUTE] Импортировано: {routes.Count} из {fileName} → {(target == RouteTarget.VPNSL ? "VPNSL" : "Напрямую")}");
             await ApplyRoutesIfConnectedAsync();
         }
         catch (Exception ex)
