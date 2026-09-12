@@ -1,4 +1,4 @@
-name: Build and Release VPNSL 1.0.0 Windows
+name: Build and Release VPNSL 1.0.1 Windows
 
 on:
   workflow_dispatch:
@@ -45,16 +45,19 @@ jobs:
             if ($sources.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
           }
 
-      - name: Verify Windows version 1.0.0
+      - name: Verify Windows version 1.0.1 and full-tunnel routing
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $project = Get-Content windows-client/VPNSL.Windows.csproj -Raw
           $xaml = Get-Content windows-client/MainWindow.xaml -Raw
           $installer = Get-Content windows-client/installer.iss -Raw
-          if (-not $project.Contains('<Version>1.0.0</Version>')) { throw 'Project version is not 1.0.0' }
-          if (-not $xaml.Contains('Windows • 1.0.0')) { throw 'UI version is not 1.0.0' }
-          if (-not $installer.Contains('#define MyAppVersion "1.0.0"')) { throw 'Installer version is not 1.0.0' }
+          $engine = Get-Content windows-client/VpnEngine.cs -Raw
+          if (-not $project.Contains('<Version>1.0.1</Version>')) { throw 'Project version is not 1.0.1' }
+          if (-not $xaml.Contains('Windows • 1.0.1')) { throw 'UI version is not 1.0.1' }
+          if (-not $installer.Contains('#define MyAppVersion "1.0.1"')) { throw 'Installer version is not 1.0.1' }
+          if (-not $engine.Contains('0.0.0.0/1') -or -not $engine.Contains('128.0.0.0/1')) { throw 'Full-tunnel split default routes are missing' }
+          if (-not $engine.Contains('TurnConnectMarker')) { throw 'TURN transport bypass protection is missing' }
 
       - name: Build and smoke-test Windows UI
         shell: pwsh
@@ -136,7 +139,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = 'dist/VPNSL-1.0.0-Windows-x64'
+          $package = 'dist/VPNSL-1.0.1-Windows-x64'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
 
@@ -164,7 +167,7 @@ jobs:
               $relative = $_.FullName.Substring((Resolve-Path $package).Path.Length + 1).Replace('\','/')
               "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $relative
             } | Set-Content "$package/SHA256SUMS.txt"
-          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.0-Windows-x64.zip -Force
+          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.1-Windows-x64.zip -Force
 
       - name: Build final Windows installer EXE
         shell: pwsh
@@ -177,21 +180,21 @@ jobs:
           if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler was not found' }
           & $iscc windows-client/installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-          $installer = 'dist/VPNSL-1.0.0-Windows-x64-Setup.exe'
+          $installer = 'dist/VPNSL-1.0.1-Windows-x64-Setup.exe'
           if (-not (Test-Path $installer)) { throw 'Installer EXE was not built' }
           Get-FileHash $installer -Algorithm SHA256 | Format-List
 
       - name: Upload final Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.0-Windows-x64
+          name: VPNSL-1.0.1-Windows-x64
           path: |
-            dist/VPNSL-1.0.0-Windows-x64.zip
-            dist/VPNSL-1.0.0-Windows-x64-Setup.exe
+            dist/VPNSL-1.0.1-Windows-x64.zip
+            dist/VPNSL-1.0.1-Windows-x64-Setup.exe
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release v1.0.0
+      - name: Publish GitHub Release v1.0.1
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -199,16 +202,17 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
           $repo = $env:GITHUB_REPOSITORY
-          $tag = 'v1.0.0'
-          $setup = 'dist/VPNSL-1.0.0-Windows-x64-Setup.exe'
-          $portable = 'dist/VPNSL-1.0.0-Windows-x64.zip'
+          $tag = 'v1.0.1'
+          $setup = 'dist/VPNSL-1.0.1-Windows-x64-Setup.exe'
+          $portable = 'dist/VPNSL-1.0.1-Windows-x64.zip'
           $notes = @'
-          Windows release VPNSL 1.0.0.
+          Windows release VPNSL 1.0.1.
 
-          - Полностью тёмный интерфейс Windows.
-          - Контрастные поля и выпадающие списки без системного белого оформления.
-          - Маршруты отображаются как «Через VPNSL» / «Напрямую».
-          - Сохранены исправления Wintun, TUNCONF, маршрутизации и корректного завершения.
+          - Full-tunnel IPv4: весь интернет-трафик по умолчанию направляется через VPNSL.
+          - Вкладка «Маршруты» сохраняется: правила «Напрямую» работают как исключения из VPN.
+          - Адрес Peer и динамические TURN-транспортные адреса автоматически защищаются от зацикливания и идут через физический шлюз.
+          - Правила применяются без полного перезапуска VPN.
+          - Сохранён тёмный интерфейс, Wintun, пакетная маршрутизация и корректное завершение.
           - Windows x64, self-contained .NET 8.
           '@
 
@@ -217,10 +221,10 @@ jobs:
           if ($releaseExists) {
             gh release upload $tag $setup $portable --clobber --repo $repo
             if ($LASTEXITCODE -ne 0) { throw 'Failed to update release assets' }
-            gh release edit $tag --title 'VPNSL Windows 1.0.0' --notes $notes --repo $repo
+            gh release edit $tag --title 'VPNSL Windows 1.0.1' --notes $notes --repo $repo
             if ($LASTEXITCODE -ne 0) { throw 'Failed to update release metadata' }
           }
           else {
-            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.0' --notes $notes --repo $repo
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to create GitHub release v1.0.0' }
+            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.1' --notes $notes --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to create GitHub release v1.0.1' }
           }
