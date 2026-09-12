@@ -1,5 +1,5 @@
 #define MyAppName "VPNSL"
-#define MyAppVersion "1.0.8"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "Sazhaev-IA"
 #define MyAppExeName "VPNSL.Windows.exe"
 
@@ -15,7 +15,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=VPNSL-1.0.8-Windows-x64-Setup
+OutputBaseFilename=VPNSL-1.0.0-Windows-x64-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -29,7 +29,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Ярлыки:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\VPNSL-1.0.8-Windows-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\VPNSL-1.0.0-Windows-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\VPNSL"; Filename: "{app}\{#MyAppExeName}"
