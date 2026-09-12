@@ -118,11 +118,15 @@ $replacement = @'
 
 '@
 
-$pattern = '(?s)    private async Task VerifyFullTunnelRoutesAsync\(uint tunnelInterface, CancellationToken token\)\s*\{.*?\n    \}\n\n(?=    private async Task RemoveInstalledRoutesCoreAsync)'
-$updated = [regex]::Replace($text, $pattern, $replacement, 1)
-if ($updated -eq $text) {
-    throw 'VerifyFullTunnelRoutesAsync block was not replaced; source layout changed.'
+$startMarker = '    private async Task VerifyFullTunnelRoutesAsync(uint tunnelInterface, CancellationToken token)'
+$endMarker = '    private async Task RemoveInstalledRoutesCoreAsync(CancellationToken token)'
+$start = $text.IndexOf($startMarker, [StringComparison]::Ordinal)
+$end = $text.IndexOf($endMarker, [StringComparison]::Ordinal)
+if ($start -lt 0 -or $end -le $start) {
+    throw 'VerifyFullTunnelRoutesAsync block markers were not found; source layout changed.'
 }
+
+$updated = $text.Substring(0, $start) + $replacement + $text.Substring($end)
 
 $directory = Split-Path -Parent $OutputPath
 if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
