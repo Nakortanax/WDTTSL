@@ -17,6 +17,20 @@ public sealed class RouteProfile
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public RouteTarget Target { get; set; } = RouteTarget.VPNSL;
     public List<string> Routes { get; set; } = [];
+
+    [JsonIgnore]
+    public string TargetDisplay => Target == RouteTarget.VPNSL ? "Через VPNSL" : "Напрямую";
+
+    [JsonIgnore]
+    public string RouteCountDisplay => Routes.Count switch
+    {
+        1 => "1 маршрут",
+        >= 2 and <= 4 => $"{Routes.Count} маршрута",
+        _ => $"{Routes.Count} маршрутов",
+    };
+
+    [JsonIgnore]
+    public string EnabledDisplay => Enabled ? "Включено" : "Выключено";
 }
 
 public sealed class AppSettings
