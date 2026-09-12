@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 
@@ -11,6 +13,9 @@ internal sealed class WintunAdapter : IDisposable
     private const int SocketBufferBytes = 4 * 1024 * 1024;
     private const int ErrorNoMoreItems = 259;
     private const uint WaitTimeout = 258;
+    private const int RouteStackPollMs = 100;
+    private const int RouteStackStableMs = 1800;
+    private const int RouteStackTimeoutMs = 8000;
 
     private IntPtr _adapter;
     private IntPtr _session;
@@ -61,6 +66,82 @@ internal sealed class WintunAdapter : IDisposable
         _writeTask = Task.Run(
             () => RunPumpAsync("client→TUN", () => PumpClientToTunAsync(_udp, log, token), log, token),
             CancellationToken.None);
+
+        // New-NetIPAddress returns before Windows has necessarily finished the
+        // adapter/address route-table transition. Installing the two /1 routes
+        // during that window can succeed and then be removed by the following
+        // interface refresh. Wait until the assigned IPv4 address has stayed
+        // visible for a short stable window before VpnEngine installs routes.
+        WaitForIpv4RouteStack(log, token);
+    }
+
+    private void WaitForIpv4RouteStack(Action<string> log, CancellationToken token)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        long? readySinceMs = null;
+        var lastState = "адаптер не найден";
+
+        while (stopwatch.ElapsedMilliseconds < RouteStackTimeoutMs)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                NetworkInterface? adapter = null;
+                foreach (var candidate in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    try
+                    {
+                        if (candidate.GetIPProperties().GetIPv4Properties()?.Index == InterfaceIndex)
+                        {
+                            adapter = candidate;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        // Some virtual adapters do not expose IPv4 properties.
+                    }
+                }
+
+                if (adapter is not null)
+                {
+                    var ipv4 = adapter.GetIPProperties().UnicastAddresses
+                        .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork)
+                        .Select(address => address.Address.ToString())
+                        .ToArray();
+                    lastState = $"status={adapter.OperationalStatus}, IPv4={string.Join(',', ipv4)}";
+
+                    if (ipv4.Length > 0)
+                    {
+                        readySinceMs ??= stopwatch.ElapsedMilliseconds;
+                        if (stopwatch.ElapsedMilliseconds - readySinceMs.Value >= RouteStackStableMs)
+                        {
+                            log($"[WINTUN] IPv4-стек стабилен для маршрутов: ifIndex {InterfaceIndex}, {lastState}");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        readySinceMs = null;
+                    }
+                }
+                else
+                {
+                    readySinceMs = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                readySinceMs = null;
+                lastState = ex.Message;
+            }
+
+            Thread.Sleep(RouteStackPollMs);
+        }
+
+        // Do not fail only because NetworkInterface did not expose a stable
+        // snapshot. VpnEngine still performs strict route creation/verification.
+        log($"[WINTUN] Предупреждение: ожидание стабилизации IPv4 истекло; продолжаем с проверкой маршрутов ({lastState})");
     }
 
     private static async Task RunPumpAsync(
