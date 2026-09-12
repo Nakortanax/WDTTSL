@@ -1,4 +1,4 @@
-name: Build and Release VPNSL 1.0.1 Windows
+name: Build and Release VPNSL 1.0.2 Windows
 
 on:
   workflow_dispatch:
@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
   actions: read
+
+concurrency:
+  group: vpnsl-windows-release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   final:
@@ -45,7 +49,7 @@ jobs:
             if ($sources.Contains($forbidden)) { throw "Forbidden Wi-Fi pause code remains: $forbidden" }
           }
 
-      - name: Verify Windows version 1.0.1 and full-tunnel routing
+      - name: Verify Windows 1.0.2 full-tunnel transport fix
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -53,11 +57,16 @@ jobs:
           $xaml = Get-Content windows-client/MainWindow.xaml -Raw
           $installer = Get-Content windows-client/installer.iss -Raw
           $engine = Get-Content windows-client/VpnEngine.cs -Raw
-          if (-not $project.Contains('<Version>1.0.1</Version>')) { throw 'Project version is not 1.0.1' }
-          if (-not $xaml.Contains('Windows • 1.0.1')) { throw 'UI version is not 1.0.1' }
-          if (-not $installer.Contains('#define MyAppVersion "1.0.1"')) { throw 'Installer version is not 1.0.1' }
-          if (-not $engine.Contains('0.0.0.0/1') -or -not $engine.Contains('128.0.0.0/1')) { throw 'Full-tunnel split default routes are missing' }
-          if (-not $engine.Contains('TurnConnectMarker')) { throw 'TURN transport bypass protection is missing' }
+          $wintun = Get-Content windows-client/Wintun.cs -Raw
+          if (-not $project.Contains('<Version>1.0.2</Version>')) { throw 'Project version is not 1.0.2' }
+          if (-not $xaml.Contains('Windows • 1.0.2')) { throw 'UI version is not 1.0.2' }
+          if (-not $installer.Contains('#define MyAppVersion "1.0.2"')) { throw 'Installer version is not 1.0.2' }
+          foreach ($required in @('0.0.0.0/1','128.0.0.0/1','WaitForTransportDiscoveryAsync','TurnCredentialMarker','VerifyFullTunnelRoutesAsync','FULL_TUNNEL_OK')) {
+            if (-not $engine.Contains($required)) { throw "Missing full-tunnel safety marker: $required" }
+          }
+          foreach ($required in @('TunToClientPackets','ClientToTunPackets','Первый исходящий IP-пакет','Первый входящий IP-пакет')) {
+            if (-not $wintun.Contains($required)) { throw "Missing Wintun bridge diagnostic marker: $required" }
+          }
 
       - name: Build and smoke-test Windows UI
         shell: pwsh
@@ -73,9 +82,9 @@ jobs:
             -o build/windows-ui
 
           $exe = (Resolve-Path 'build/windows-ui/VPNSL.Windows.exe').Path
-          if (-not (Test-Path $exe)) { throw 'VPNSL.Windows.exe was not built' }
-          if (-not (Test-Path 'build/windows-ui/VPNSL.Windows.dll')) { throw 'Expected multi-file self-contained WPF output is missing' }
-          if (-not (Test-Path 'build/windows-ui/coreclr.dll')) { throw 'Self-contained .NET runtime is missing' }
+          foreach ($required in @('VPNSL.Windows.exe','VPNSL.Windows.dll','coreclr.dll')) {
+            if (-not (Test-Path "build/windows-ui/$required")) { throw "Windows UI output missing: $required" }
+          }
 
           $exeText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
           if (-not $exeText.Contains('requestedExecutionLevel level="asInvoker"')) {
@@ -86,17 +95,13 @@ jobs:
           Remove-Item $marker -Force -ErrorAction SilentlyContinue
           $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
           $p = Start-Process -FilePath $exe -ArgumentList '--startup-smoke-test' -WorkingDirectory (Resolve-Path 'build/windows-ui').Path -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Published basic smoke test exited with $($p.ExitCode)" }
-          if (-not (Test-Path $marker)) { throw 'Published EXE did not execute Program.Main basic smoke test' }
-          Get-Content $marker
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Published basic smoke test failed' }
 
           $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-publish-wpf-smoke.ok'
           Remove-Item $marker -Force -ErrorAction SilentlyContinue
           $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
           $p = Start-Process -FilePath $exe -ArgumentList '--wpf-smoke-test' -WorkingDirectory (Resolve-Path 'build/windows-ui').Path -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Published WPF/XAML smoke test exited with $($p.ExitCode)" }
-          if (-not (Test-Path $marker)) { throw 'Published EXE failed before completing App.xaml/MainWindow.xaml smoke test' }
-          Get-Content $marker
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Published WPF/XAML smoke test failed' }
 
       - name: Build VPNSL Rust client with static CRT
         shell: pwsh
@@ -107,9 +112,7 @@ jobs:
           $client = 'target/x86_64-pc-windows-msvc/release/client.exe'
           if (-not (Test-Path $client)) { throw 'client.exe was not built' }
           $clientText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($client))
-          if ($clientText -match 'VCRUNTIME140\.dll') {
-            throw 'client.exe still depends on VCRUNTIME140.dll; static CRT build failed'
-          }
+          if ($clientText -match 'VCRUNTIME140\.dll') { throw 'client.exe still depends on VCRUNTIME140.dll' }
           Get-FileHash $client -Algorithm SHA256 | Format-List
 
       - name: Download verified server-assets baseline
@@ -139,10 +142,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = 'dist/VPNSL-1.0.1-Windows-x64'
+          $package = 'dist/VPNSL-1.0.2-Windows-x64'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
-
           Copy-Item 'build/windows-ui/*' $package -Recurse -Force
           Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe "$package/client.exe" -Force
           Copy-Item windows-client/README.md "$package/README-WINDOWS.txt" -Force
@@ -157,9 +159,7 @@ jobs:
           $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
           $portableExe = (Resolve-Path "$package/VPNSL.Windows.exe").Path
           $p = Start-Process -FilePath $portableExe -ArgumentList '--wpf-smoke-test' -WorkingDirectory (Resolve-Path $package).Path -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Portable WPF/XAML smoke test exited with $($p.ExitCode)" }
-          if (-not (Test-Path $marker)) { throw 'Portable EXE failed App.xaml/MainWindow.xaml startup smoke test' }
-          Get-Content $marker
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Portable WPF/XAML smoke test failed' }
 
           Get-ChildItem $package -File -Recurse |
             Sort-Object FullName |
@@ -167,34 +167,32 @@ jobs:
               $relative = $_.FullName.Substring((Resolve-Path $package).Path.Length + 1).Replace('\','/')
               "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $relative
             } | Set-Content "$package/SHA256SUMS.txt"
-          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.1-Windows-x64.zip -Force
+          Compress-Archive -Path $package -DestinationPath dist/VPNSL-1.0.2-Windows-x64.zip -Force
 
       - name: Build final Windows installer EXE
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup --yes --no-progress
-          }
+          if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
           if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler was not found' }
           & $iscc windows-client/installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-          $installer = 'dist/VPNSL-1.0.1-Windows-x64-Setup.exe'
+          $installer = 'dist/VPNSL-1.0.2-Windows-x64-Setup.exe'
           if (-not (Test-Path $installer)) { throw 'Installer EXE was not built' }
           Get-FileHash $installer -Algorithm SHA256 | Format-List
 
       - name: Upload final Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.1-Windows-x64
+          name: VPNSL-1.0.2-Windows-x64
           path: |
-            dist/VPNSL-1.0.1-Windows-x64.zip
-            dist/VPNSL-1.0.1-Windows-x64-Setup.exe
+            dist/VPNSL-1.0.2-Windows-x64.zip
+            dist/VPNSL-1.0.2-Windows-x64-Setup.exe
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release v1.0.1
+      - name: Publish GitHub Release windows-v1.0.2
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -202,29 +200,29 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
           $repo = $env:GITHUB_REPOSITORY
-          $tag = 'v1.0.1'
-          $setup = 'dist/VPNSL-1.0.1-Windows-x64-Setup.exe'
-          $portable = 'dist/VPNSL-1.0.1-Windows-x64.zip'
+          $tag = 'windows-v1.0.2'
+          $setup = 'dist/VPNSL-1.0.2-Windows-x64-Setup.exe'
+          $portable = 'dist/VPNSL-1.0.2-Windows-x64.zip'
           $notes = @'
-          Windows release VPNSL 1.0.1.
+          VPNSL Windows 1.0.2 — исправление full-tunnel.
 
-          - Full-tunnel IPv4: весь интернет-трафик по умолчанию направляется через VPNSL.
-          - Вкладка «Маршруты» сохраняется: правила «Напрямую» работают как исключения из VPN.
-          - Адрес Peer и динамические TURN-транспортные адреса автоматически защищаются от зацикливания и идут через физический шлюз.
-          - Правила применяются без полного перезапуска VPN.
-          - Сохранён тёмный интерфейс, Wintun, пакетная маршрутизация и корректное завершение.
-          - Windows x64, self-contained .NET 8.
+          - Исправлена гонка включения full-tunnel: split-default больше не включается до обнаружения TURN-транспорта.
+          - TURN-адреса заранее получают физические /32 маршруты, поэтому транспорт VPNSL не попадает обратно в собственный Wintun.
+          - Ошибки New-NetRoute больше не игнорируются; каждый маршрут проверяется после установки.
+          - Split-default 0.0.0.0/1 и 128.0.0.0/1 отдельно проверяются в таблице Windows.
+          - Добавлена диагностика моста Wintun: первый пакет в client.exe, первый пакет обратно и контроль двустороннего обмена.
+          - «Напрямую» остаётся исключением из full-tunnel, «Через VPNSL» — явным закреплением за VPN.
+          - Wi-Fi/Ethernet не блокируют VPN.
+          - Windows 10/11 x64, self-contained .NET 8.
           '@
 
           gh release view $tag --repo $repo *> $null
-          $releaseExists = ($LASTEXITCODE -eq 0)
-          if ($releaseExists) {
+          if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $setup $portable --clobber --repo $repo
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to update release assets' }
-            gh release edit $tag --title 'VPNSL Windows 1.0.1' --notes $notes --repo $repo
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to update release metadata' }
-          }
-          else {
-            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.1' --notes $notes --repo $repo
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to create GitHub release v1.0.1' }
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to update Windows 1.0.2 release assets' }
+            gh release edit $tag --title 'VPNSL Windows 1.0.2' --notes $notes --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to update Windows 1.0.2 release metadata' }
+          } else {
+            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.2' --notes $notes --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to create Windows 1.0.2 release' }
           }
