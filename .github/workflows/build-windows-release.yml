@@ -1,0 +1,248 @@
+name: Build and Release VPNSL Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - windows-v1.0.8
+    paths:
+      - 'windows-client/**'
+      - 'rust-client/**'
+      - '.github/workflows/build-windows-release.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: vpnsl-windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VPNSL_VERSION: '1.0.0'
+  VPNSL_TAG: 'windows-v1.0.0'
+  VPNSL_PACKAGE: 'VPNSL-1.0.0-Windows-x64'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Windows source
+        uses: actions/checkout@v4
+
+      - name: Set release version to 1.0.0
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VPNSL_VERSION
+          $package = $env:VPNSL_PACKAGE
+
+          $projectPath = 'windows-client/VPNSL.Windows.csproj'
+          $project = Get-Content $projectPath -Raw
+          $project = [regex]::Replace($project, '<Version>[^<]+</Version>', "<Version>$version</Version>")
+          $project = [regex]::Replace($project, '<FileVersion>[^<]+</FileVersion>', "<FileVersion>$version.0</FileVersion>")
+          [IO.File]::WriteAllText($projectPath, $project, [Text.UTF8Encoding]::new($false))
+
+          $xamlPath = 'windows-client/MainWindow.xaml'
+          $xaml = Get-Content $xamlPath -Raw
+          $xaml = [regex]::Replace($xaml, 'Title="VPNSL [0-9.]+"', "Title=`"VPNSL $version`"")
+          $xaml = [regex]::Replace($xaml, 'Text="Windows • [0-9.]+"', "Text=`"Windows • $version`"")
+          [IO.File]::WriteAllText($xamlPath, $xaml, [Text.UTF8Encoding]::new($false))
+
+          $installerPath = 'windows-client/installer.iss'
+          $installer = Get-Content $installerPath -Raw
+          $installer = [regex]::Replace($installer, '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$version`"")
+          $installer = [regex]::Replace($installer, 'OutputBaseFilename=VPNSL-[0-9.]+-Windows-x64-Setup', "OutputBaseFilename=$package-Setup")
+          $installer = [regex]::Replace($installer, 'Source: "\.\.\\dist\\VPNSL-[0-9.]+-Windows-x64\\\*"', "Source: `"..\dist\$package\*`"")
+          [IO.File]::WriteAllText($installerPath, $installer, [Text.UTF8Encoding]::new($false))
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Rust 1.97.1
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          targets: x86_64-pc-windows-msvc
+
+      - name: Verify stable Windows baseline
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Get-Content windows-client/VPNSL.Windows.csproj -Raw
+          $xaml = Get-Content windows-client/MainWindow.xaml -Raw
+          $installer = Get-Content windows-client/installer.iss -Raw
+          $engine = Get-Content windows-client/VpnEngine.cs -Raw
+          $routePatch = Get-Content windows-client/patch-vpnengine-routing.ps1 -Raw
+          if (-not $project.Contains('<Version>1.0.0</Version>')) { throw 'Project version is not 1.0.0' }
+          if (-not $xaml.Contains('Windows • 1.0.0')) { throw 'UI version is not 1.0.0' }
+          if (-not $installer.Contains('#define MyAppVersion "1.0.0"')) { throw 'Installer version is not 1.0.0' }
+          foreach ($required in @('0.0.0.0/1','128.0.0.0/1','WaitForTransportDiscoveryAsync','VerifyFullTunnelRoutesAsync')) {
+            if (-not $engine.Contains($required)) { throw "Missing routing marker: $required" }
+          }
+          foreach ($required in @('DEFAULT_TUNNEL_OK','InstallSplitDefaultWithNetshAsync','InstallDefaultRouteWithNetshAsync','netsh.exe')) {
+            if (-not $routePatch.Contains($required)) { throw "Missing full-tunnel fallback marker: $required" }
+          }
+
+      - name: Build and smoke-test Windows UI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish windows-client/VPNSL.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o build/windows-ui
+
+          foreach ($required in @('VPNSL.Windows.exe','VPNSL.Windows.dll','coreclr.dll')) {
+            if (-not (Test-Path "build/windows-ui/$required")) { throw "Windows UI output missing: $required" }
+          }
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-wpf-smoke.ok'
+          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
+          $exe = (Resolve-Path 'build/windows-ui/VPNSL.Windows.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--wpf-smoke-test' -WorkingDirectory (Resolve-Path 'build/windows-ui').Path -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Published WPF smoke test failed' }
+
+      - name: Build VPNSL Rust client
+        shell: pwsh
+        working-directory: rust-client
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --release --target x86_64-pc-windows-msvc
+          $client = 'target/x86_64-pc-windows-msvc/release/client.exe'
+          if (-not (Test-Path $client)) { throw 'client.exe was not built' }
+          $clientText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($client))
+          if ($clientText -match 'VCRUNTIME140\.dll') { throw 'client.exe depends on VCRUNTIME140.dll' }
+
+      - name: Download verified Windows baseline assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_ARTIFACT_ID: '10086607313'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:BASELINE_ARTIFACT_ID/zip"
+          Invoke-WebRequest -Uri $uri -Headers $headers -OutFile baseline-artifact.zip -MaximumRedirection 10
+          Expand-Archive baseline-artifact.zip -DestinationPath baseline-artifact -Force
+          $portable = 'baseline-artifact/VPNSL-1.0.8-Windows-x64.zip'
+          if (-not (Test-Path $portable)) { throw 'Verified baseline portable package is missing' }
+          Expand-Archive $portable -DestinationPath baseline-portable -Force
+          $root = 'baseline-portable/VPNSL-1.0.8-Windows-x64'
+          if (-not (Test-Path "$root/wintun.dll")) { throw 'Baseline wintun.dll missing' }
+          foreach ($name in @('csqtt-linux-amd64','csqtt-linux-arm64','csqtt-linux-armv7','deploy.sh')) {
+            if (-not (Test-Path "$root/server-assets/$name")) { throw "Baseline server asset missing: $name" }
+          }
+
+      - name: Assemble and smoke-test portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = "dist/$env:VPNSL_PACKAGE"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'baseline-portable/VPNSL-1.0.8-Windows-x64' $package -Recurse -Force
+          Copy-Item 'build/windows-ui/*' $package -Recurse -Force
+          Copy-Item rust-client/target/x86_64-pc-windows-msvc/release/client.exe "$package/client.exe" -Force
+          Copy-Item windows-client/README.md "$package/README-WINDOWS.txt" -Force
+          Remove-Item "$package/SHA256SUMS.txt" -Force -ErrorAction SilentlyContinue
+
+          foreach ($required in @('VPNSL.Windows.exe','VPNSL.Windows.dll','VPNSL.Windows.runtimeconfig.json','coreclr.dll','hostfxr.dll','client.exe','wintun.dll')) {
+            if (-not (Test-Path "$package/$required")) { throw "Portable package missing: $required" }
+          }
+          $marker = Join-Path $env:RUNNER_TEMP 'vpnsl-portable-smoke.ok'
+          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $env:VPNSL_STARTUP_SMOKE_MARKER = $marker
+          $exe = (Resolve-Path "$package/VPNSL.Windows.exe").Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--wpf-smoke-test' -WorkingDirectory (Resolve-Path $package).Path -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Portable WPF smoke test failed' }
+
+          Get-ChildItem $package -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $relative = $_.FullName.Substring((Resolve-Path $package).Path.Length + 1).Replace('\','/')
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $relative
+          } | Set-Content "$package/SHA256SUMS.txt"
+          Compress-Archive -Path $package -DestinationPath "dist/$env:VPNSL_PACKAGE.zip" -Force
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler was not found' }
+          & $iscc windows-client/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
+          if (-not (Test-Path "dist/$env:VPNSL_PACKAGE-Setup.exe")) { throw 'Installer was not built' }
+
+      - name: Upload Windows 1.0.0 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPNSL-1.0.0-Windows-x64
+          path: |
+            dist/VPNSL-1.0.0-Windows-x64.zip
+            dist/VPNSL-1.0.0-Windows-x64-Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Replace old Windows releases with 1.0.0
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $repo = $env:GITHUB_REPOSITORY
+          $tag = $env:VPNSL_TAG
+          $setup = "dist/$env:VPNSL_PACKAGE-Setup.exe"
+          $portable = "dist/$env:VPNSL_PACKAGE.zip"
+
+          $oldTags = @(gh release list --repo $repo --limit 100 --json tagName --jq '.[].tagName')
+          foreach ($oldTag in $oldTags) {
+            if ($oldTag -match '^windows-v' -and $oldTag -ne $tag) {
+              Write-Host "Deleting obsolete Windows release $oldTag"
+              gh release delete $oldTag --cleanup-tag --yes --repo $repo
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete obsolete release $oldTag" }
+            }
+          }
+
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $setup $portable --clobber --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to update Windows 1.0.0 assets' }
+            gh release edit $tag --title 'VPNSL Windows 1.0.0' --notes 'Первый стабильный релиз VPNSL для Windows. Full-tunnel IPv4, Wintun, безопасный обход TURN-транспорта, резервный native/netsh full-tunnel и профили маршрутизации.' --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to update Windows 1.0.0 metadata' }
+          } else {
+            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.0' --notes 'Первый стабильный релиз VPNSL для Windows. Full-tunnel IPv4, Wintun, безопасный обход TURN-транспорта, резервный native/netsh full-tunnel и профили маршрутизации.' --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to create Windows 1.0.0 release' }
+          }
+
+      - name: Delete obsolete Windows build artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY
+          $rows = @(gh api "repos/$repo/actions/artifacts?per_page=100" --paginate --jq '.artifacts[] | [.id,.name,.workflow_run.id] | @tsv')
+          foreach ($row in $rows) {
+            $parts = $row -split "`t"
+            if ($parts.Count -lt 3) { continue }
+            $id = $parts[0]
+            $name = $parts[1]
+            $runId = $parts[2]
+            if ($name -match '^VPNSL-.*Windows-x64' -and $runId -ne $env:GITHUB_RUN_ID) {
+              Write-Host "Deleting obsolete Windows artifact $id ($name)"
+              gh api --method DELETE "repos/$repo/actions/artifacts/$id"
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete artifact $id" }
+            }
+          }
