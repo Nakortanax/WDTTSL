@@ -20,16 +20,16 @@
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Width="38" Height="38" CornerRadius="10" Background="{StaticResource Primary}" Margin="0,0,12,0">
+        <Border Grid.Column="0" Width="38" Height="38" CornerRadius="10" Background="{StaticResource PrimaryDark}" BorderBrush="{StaticResource Primary}" BorderThickness="1" Margin="0,0,12,0">
           <TextBlock Text="V" Foreground="White" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <StackPanel Grid.Column="1" VerticalAlignment="Center">
           <TextBlock Text="VPNSL" FontSize="21" FontWeight="Bold" Foreground="{StaticResource Text}"/>
           <TextBlock Text="Windows • 1.0.8" FontSize="11" Foreground="{StaticResource Muted}"/>
         </StackPanel>
-        <Border Grid.Column="2" Background="{StaticResource Surface2}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="10" Padding="12,6" VerticalAlignment="Center">
+        <Border Grid.Column="2" Background="{StaticResource Surface2}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="10" Padding="12,6" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal">
-            <Ellipse Width="7" Height="7" Fill="{StaticResource Primary}" VerticalAlignment="Center" Margin="0,0,7,0"/>
+            <Ellipse x:Name="HeaderStatusDot" Width="7" Height="7" Fill="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,7,0"/>
             <TextBlock x:Name="HeaderStatus" Text="Отключено" Foreground="{StaticResource Muted}" FontWeight="SemiBold" VerticalAlignment="Center"/>
           </StackPanel>
         </Border>
@@ -46,11 +46,11 @@
               <StackPanel>
                 <Border Width="120" Height="120" CornerRadius="28" Background="{StaticResource Surface2}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" HorizontalAlignment="Center" Margin="0,8,0,18">
                   <Grid>
-                    <Ellipse Width="76" Height="76" Fill="#18335B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    <TextBlock Text="V" FontSize="54" FontWeight="Bold" Foreground="{StaticResource PrimarySoft}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Ellipse Width="76" Height="76" Fill="#23304A" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBlock Text="V" FontSize="54" FontWeight="Bold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                   </Grid>
                 </Border>
-                <TextBlock x:Name="ConnectionStatus" Text="Отключено" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="ConnectionStatus" Text="Отключено" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource Muted}" HorizontalAlignment="Center"/>
                 <TextBlock x:Name="UptimeText" Text="00:00:00" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,5,0,18"/>
                 <Button x:Name="ConnectButton" Content="Подключить" Height="54" Style="{StaticResource PrimaryButton}" Click="ConnectButton_Click" Margin="0"/>
               </StackPanel>
@@ -150,12 +150,15 @@
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <StackPanel>
                 <TextBlock Text="Маршруты по адресам и файлам" FontSize="16" FontWeight="SemiBold"/>
-                <TextBlock Text="По умолчанию используется обычная сеть. Включённые правила VPNSL направляются в туннель. Выбор приложений в Windows-версии не используется." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,12"/>
+                <TextBlock Text="По умолчанию используется обычная сеть. Включённые правила «Через VPNSL» направляются в туннель. «Напрямую» использует физическое подключение Windows." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,12"/>
                 <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*"/><ColumnDefinition/><ColumnDefinition Width="135"/></Grid.ColumnDefinitions>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*"/><ColumnDefinition/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
                   <TextBox x:Name="RouteNameBox" Grid.Column="0" Margin="0,4,6,8" ToolTip="Подпись ресурса"/>
                   <TextBox x:Name="RouteCidrBox" Grid.Column="1" Margin="6,4,6,8" ToolTip="IPv4 или CIDR"/>
-                  <ComboBox x:Name="RouteTargetBox" Grid.Column="2" Margin="6,4,0,8"><ComboBoxItem Content="VPNSL"/><ComboBoxItem Content="MOBILE"/></ComboBox>
+                  <ComboBox x:Name="RouteTargetBox" Grid.Column="2" Margin="6,4,0,8">
+                    <ComboBoxItem Content="Через VPNSL" Tag="VPNSL"/>
+                    <ComboBoxItem Content="Напрямую" Tag="MOBILE"/>
+                  </ComboBox>
                 </Grid>
                 <Button Content="Добавить маршрут" Style="{StaticResource PrimaryButton}" Click="AddRoute_Click" Margin="0,0,0,6"/>
                 <WrapPanel>
@@ -173,19 +176,26 @@
               </StackPanel>
             </Border>
           </StackPanel>
-          <ListBox x:Name="RoutesList" Grid.Row="1" Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Auto">
+          <ListBox x:Name="RoutesList" Grid.Row="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="10" Padding="11" Margin="0,3">
+                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,4">
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="RouteEnabled_Changed" Unchecked="RouteEnabled_Changed"/>
-                    <StackPanel Grid.Column="1">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                      <TextBlock Text="{Binding Routes[0]}" Foreground="{StaticResource Muted}" FontSize="11"/>
-                      <TextBlock Text="{Binding Target, StringFormat='Сеть: {0}'}" Foreground="{StaticResource PrimarySoft}" FontSize="11"/>
+                    <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,11,0" Checked="RouteEnabled_Changed" Unchecked="RouteEnabled_Changed"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource Text}"/>
+                      <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock Text="{Binding RouteCountDisplay}" Foreground="{StaticResource Muted}" FontSize="11"/>
+                        <TextBlock Text="  •  " Foreground="{StaticResource Muted2}" FontSize="11"/>
+                        <TextBlock Text="{Binding EnabledDisplay}" Foreground="{StaticResource Muted}" FontSize="11"/>
+                      </StackPanel>
+                      <TextBlock Text="{Binding Routes[0]}" Foreground="{StaticResource Muted2}" FontSize="11" Margin="0,2,0,0"/>
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal"><Button Content="Сеть" Tag="{Binding Id}" Click="ChangeRouteTarget_Click"/><Button Content="Удалить" Tag="{Binding Id}" Click="DeleteRoute_Click"/></StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Button Content="{Binding TargetDisplay}" Tag="{Binding Id}" Click="ChangeRouteTarget_Click" Style="{StaticResource RouteTargetButton}"/>
+                      <Button Content="Удалить" Tag="{Binding Id}" Click="DeleteRoute_Click" Style="{StaticResource DangerButton}"/>
+                    </StackPanel>
                   </Grid>
                 </Border>
               </DataTemplate>
@@ -234,7 +244,7 @@
                 <ProgressBar x:Name="ServerProgress" Height="6" IsIndeterminate="True" Visibility="Collapsed" Margin="0,4,0,8"/>
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                   <Button x:Name="InstallServerButton" Grid.Column="0" Content="Установить / переустановить" Style="{StaticResource PrimaryButton}" Click="InstallServer_Click"/>
-                  <Button x:Name="UninstallServerButton" Grid.Column="1" Content="Удалить" Click="UninstallServer_Click"/>
+                  <Button x:Name="UninstallServerButton" Grid.Column="1" Content="Удалить" Click="UninstallServer_Click" Style="{StaticResource DangerButton}"/>
                 </Grid>
                 <Button Content="Открыть web-панель" Click="OpenServerPanel_Click"/>
               </StackPanel>
@@ -251,7 +261,7 @@
           <TextBlock Text="Журнал работы VPN, маршрутов и Wintun" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11"/>
         </Grid>
         <Border Grid.Row="1" Style="{StaticResource Card}" Padding="6">
-          <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Background="#08101C" BorderThickness="0" Margin="0"/>
+          <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Foreground="#E2E7EF" Background="{StaticResource LogBg}" BorderThickness="0" Margin="0"/>
         </Border>
         <Button Grid.Row="2" Content="Очистить журнал" Click="ClearLogs_Click" HorizontalAlignment="Right" Margin="0,8,0,0"/>
       </Grid>
@@ -292,9 +302,9 @@
     </Grid>
 
     <!-- Navigation -->
-    <Border Grid.Row="2" Background="{StaticResource Surface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="14" Padding="5" Margin="0,12,0,0">
-      <UniformGrid Rows="1" Columns="6">
-        <Button Content="Подключение" Tag="connection" Click="Nav_Click" Style="{StaticResource NavButton}"/>
+    <Border Grid.Row="2" Background="{StaticResource Surface}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="14" Padding="5" Margin="0,12,0,0">
+      <UniformGrid x:Name="NavBar" Rows="1" Columns="6">
+        <Button Content="Подключение" Tag="connection" Click="Nav_Click" Style="{StaticResource NavButton}" Background="{StaticResource PrimaryDark}" Foreground="White" BorderBrush="{StaticResource Primary}"/>
         <Button Content="Туннель" Tag="settings" Click="Nav_Click" Style="{StaticResource NavButton}"/>
         <Button Content="Установка" Tag="server" Click="Nav_Click" Style="{StaticResource NavButton}"/>
         <Button Content="Маршруты" Tag="routing" Click="Nav_Click" Style="{StaticResource NavButton}"/>
