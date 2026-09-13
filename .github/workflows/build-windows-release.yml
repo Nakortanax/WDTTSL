@@ -18,11 +18,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VPNSL_VERSION: '1.0.1'
-  VPNSL_TAG: 'windows-v1.0.1'
-  VPNSL_PACKAGE: 'VPNSL-1.0.1-Windows-x64'
-  VPNSL_BASELINE_TAG: 'windows-v1.0.0'
-  VPNSL_BASELINE_PACKAGE: 'VPNSL-1.0.0-Windows-x64'
+  VPNSL_VERSION: '1.0.2'
+  VPNSL_TAG: 'windows-v1.0.2'
+  VPNSL_PACKAGE: 'VPNSL-1.0.2-Windows-x64'
+  VPNSL_BASELINE_TAG: 'windows-v1.0.1'
+  VPNSL_BASELINE_PACKAGE: 'VPNSL-1.0.1-Windows-x64'
 
 jobs:
   candidate:
@@ -48,7 +48,8 @@ jobs:
           $xamlPath = 'windows-client/MainWindow.xaml'
           $xaml = Get-Content $xamlPath -Raw
           $xaml = [regex]::Replace($xaml, 'Title="VPNSL [0-9.]+"', "Title=`"VPNSL $version`"")
-          $xaml = [regex]::Replace($xaml, 'Text="Windows • [0-9.]+"', "Text=`"Windows • $version`"")
+          $xaml = [regex]::Replace($xaml, 'Text="VPNSL [0-9.]+" FontSize="21"', "Text=`"VPNSL $version`" FontSize=`"21`"")
+          $xaml = [regex]::Replace($xaml, 'Text="Версия [0-9.]+"', "Text=`"Версия $version`"")
           [IO.File]::WriteAllText($xamlPath, $xaml, [Text.UTF8Encoding]::new($false))
 
           $installerPath = 'windows-client/installer.iss'
@@ -69,15 +70,15 @@ jobs:
           toolchain: 1.97.1
           targets: x86_64-pc-windows-msvc
 
-      - name: Verify Windows 1.0.1 direct-route fix
+      - name: Verify Windows 1.0.2 UI candidate and routing base
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $project = Get-Content windows-client/VPNSL.Windows.csproj -Raw
           $xaml = Get-Content windows-client/MainWindow.xaml -Raw
           $patch = Get-Content windows-client/patch-vpnengine-routing.ps1 -Raw
-          if (-not $project.Contains('<Version>1.0.1</Version>')) { throw 'Project version is not 1.0.1' }
-          if (-not $xaml.Contains('Windows • 1.0.1')) { throw 'UI version is not 1.0.1' }
+          if (-not $project.Contains('<Version>1.0.2</Version>')) { throw 'Project version is not 1.0.2' }
+          if (-not $xaml.Contains('Text="VPNSL 1.0.2"')) { throw 'Header version is not 1.0.2' }
           foreach ($required in @('DEFAULT_TUNNEL_OK','InstallSplitDefaultWithNetshAsync','InstallDefaultRouteWithNetshAsync','VerifyAndReassertDirectRoutesAsync','TryInferDirectProfileHost','LIVE-DNS','DIRECT_OK')) {
             if (-not $patch.Contains($required)) { throw "Missing routing fix marker: $required" }
           }
@@ -115,7 +116,7 @@ jobs:
           $clientText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($client))
           if ($clientText -match 'VCRUNTIME140\.dll') { throw 'client.exe depends on VCRUNTIME140.dll' }
 
-      - name: Download stable 1.0.0 baseline assets
+      - name: Download stable 1.0.1 baseline assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,7 +124,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path baseline-download | Out-Null
           gh release download $env:VPNSL_BASELINE_TAG --repo $env:GITHUB_REPOSITORY --pattern "$env:VPNSL_BASELINE_PACKAGE.zip" --dir baseline-download
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to download stable Windows 1.0.0 baseline' }
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download stable Windows 1.0.1 baseline' }
           $portable = "baseline-download/$env:VPNSL_BASELINE_PACKAGE.zip"
           if (-not (Test-Path $portable)) { throw 'Stable baseline portable package is missing' }
           Expand-Archive $portable -DestinationPath baseline-portable -Force
@@ -171,13 +172,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
           if (-not (Test-Path "dist/$env:VPNSL_PACKAGE-Setup.exe")) { throw 'Candidate installer was not built' }
 
-      - name: Upload Windows 1.0.1 candidate
+      - name: Upload Windows 1.0.2 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.1-Windows-x64-candidate
+          name: VPNSL-1.0.2-Windows-x64-candidate
           path: |
-            dist/VPNSL-1.0.1-Windows-x64.zip
-            dist/VPNSL-1.0.1-Windows-x64-Setup.exe
+            dist/VPNSL-1.0.2-Windows-x64.zip
+            dist/VPNSL-1.0.2-Windows-x64-Setup.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -192,7 +193,7 @@ jobs:
           $releases = gh api "repos/$repo/releases?per_page=100" | ConvertFrom-Json
           foreach ($release in $releases) {
             $tag = [string]$release.tag_name
-            if ($tag -in @('windows-v1.0.0','windows-v1.0.1')) { continue }
+            if ($tag -in @('windows-v1.0.0','windows-v1.0.1','windows-v1.0.2')) { continue }
             $windowsAssets = @($release.assets | Where-Object { $_.name -match 'Windows-x64' })
             if ($windowsAssets.Count -gt 0) {
               Write-Host "Deleting legacy Windows release $tag"
@@ -221,7 +222,7 @@ jobs:
             }
           }
 
-      - name: Publish Windows 1.0.1 when approved
+      - name: Publish Windows 1.0.2 when approved
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,19 +231,19 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           $approved = (Get-Content windows-client/RELEASE_VERSION.txt -Raw).Trim()
           if ($approved -ne $env:VPNSL_VERSION) {
-            Write-Host "Candidate only: RELEASE_VERSION.txt=$approved; official release remains Windows 1.0.0"
+            Write-Host "Candidate only: RELEASE_VERSION.txt=$approved; official release remains Windows 1.0.1"
             exit 0
           }
           $repo = $env:GITHUB_REPOSITORY
           $tag = $env:VPNSL_TAG
           $setup = "dist/$env:VPNSL_PACKAGE-Setup.exe"
           $portable = "dist/$env:VPNSL_PACKAGE.zip"
-          $notes = 'VPNSL Windows 1.0.1 — исправлена маршрутизация «Напрямую»: исключения устанавливаются после стабилизации full-tunnel, повторно проверяются отдельным процессом Windows, при необходимости восстанавливаются через netsh; для профилей с именем сайта добавлено обновление текущих IPv4 DNS.'
+          $notes = 'VPNSL Windows 1.0.2 — улучшен интерфейс маршрутов: версия перенесена в строку заголовка, убран лишний поясняющий блок, поля добавления маршрута получили подписи, список стал компактнее и добавлен поиск по имени/IP/CIDR.'
           gh release view $tag --repo $repo *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $setup $portable --clobber --repo $repo
-            gh release edit $tag --title 'VPNSL Windows 1.0.1' --notes $notes --repo $repo
+            gh release edit $tag --title 'VPNSL Windows 1.0.2' --notes $notes --repo $repo
           } else {
-            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.1' --notes $notes --repo $repo
+            gh release create $tag $setup $portable --target $env:GITHUB_SHA --title 'VPNSL Windows 1.0.2' --notes $notes --repo $repo
           }
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish Windows 1.0.1' }
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish Windows 1.0.2' }
