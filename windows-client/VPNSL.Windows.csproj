@@ -17,6 +17,7 @@
     <Platforms>x64</Platforms>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets\VPNSL.ico" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 </Project>
