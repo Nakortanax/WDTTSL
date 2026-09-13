@@ -23,10 +23,7 @@
         <Border Grid.Column="0" Width="38" Height="38" CornerRadius="10" Background="{StaticResource PrimaryDark}" BorderBrush="{StaticResource Primary}" BorderThickness="1" Margin="0,0,12,0">
           <TextBlock Text="V" Foreground="White" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
-        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-          <TextBlock Text="VPNSL" FontSize="21" FontWeight="Bold" Foreground="{StaticResource Text}"/>
-          <TextBlock Text="Windows • 1.0.2" FontSize="11" Foreground="{StaticResource Muted}"/>
-        </StackPanel>
+        <TextBlock Grid.Column="1" Text="VPNSL 1.0.2" FontSize="21" FontWeight="Bold" Foreground="{StaticResource Text}" VerticalAlignment="Center"/>
         <Border Grid.Column="2" Background="{StaticResource Surface2}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="10" Padding="12,6" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal">
             <Ellipse x:Name="HeaderStatusDot" Width="7" Height="7" Fill="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,7,0"/>
@@ -107,7 +104,7 @@
             <Border Style="{StaticResource Card}" Margin="0,0,0,12">
               <StackPanel>
                 <TextBlock Text="Подключение" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Text="Peer" Foreground="{StaticResource Muted}"/><TextBox x:Name="PeerBox" ToolTip="IP/домен и порт сервера"/>
+                <TextBlock Text="Peer" Foreground="{StaticResource Muted}"/><TextBox x:Name="PeerBox"/>
                 <TextBlock Text="Пароль подключения" Foreground="{StaticResource Muted}"/><PasswordBox x:Name="PasswordBox"/>
                 <TextBlock Text="Хеши VK" Foreground="{StaticResource Muted}"/><TextBox x:Name="VkHashesBox" AcceptsReturn="True" Height="76" VerticalScrollBarVisibility="Auto"/>
               </StackPanel>
@@ -144,24 +141,31 @@
       <!-- Routing -->
       <Grid x:Name="RoutingPage" Visibility="Collapsed" Background="{StaticResource Bg}">
         <Grid Margin="4,2,4,8">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <StackPanel Grid.Row="0">
             <TextBlock Text="Маршрутизация" Style="{StaticResource SectionTitle}"/>
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <StackPanel>
-                <TextBlock Text="Исключения и явные маршруты" FontSize="16" FontWeight="SemiBold"/>
-                <TextBlock Text="По умолчанию весь IPv4-трафик идёт через VPNSL. Правило «Напрямую» исключает выбранный адрес или сеть из VPN и отправляет его через физическое подключение Windows. «Через VPNSL» явно закрепляет маршрут за туннелем." TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,5,0,12"/>
                 <Border Background="#162A22" BorderBrush="#2D6550" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,0,0,10">
                   <TextBlock Text="FULL-TUNNEL IPv4 ВКЛЮЧЁН ПО УМОЛЧАНИЮ" Foreground="{StaticResource Success}" FontWeight="SemiBold"/>
                 </Border>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*"/><ColumnDefinition/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
-                  <TextBox x:Name="RouteNameBox" Grid.Column="0" Margin="0,4,6,8" ToolTip="Подпись ресурса"/>
-                  <TextBox x:Name="RouteCidrBox" Grid.Column="1" Margin="6,4,6,8" ToolTip="IPv4 или CIDR"/>
-                  <ComboBox x:Name="RouteTargetBox" Grid.Column="2" Margin="6,4,0,8">
-                    <ComboBoxItem Content="Напрямую" Tag="MOBILE"/>
-                    <ComboBoxItem Content="Через VPNSL" Tag="VPNSL"/>
-                  </ComboBox>
+                  <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                    <TextBlock Text="Описание" Foreground="{StaticResource Muted}" FontSize="11"/>
+                    <TextBox x:Name="RouteNameBox" Margin="0,4,0,8"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="6,0,6,0">
+                    <TextBlock Text="IPv4 / CIDR" Foreground="{StaticResource Muted}" FontSize="11"/>
+                    <TextBox x:Name="RouteCidrBox" Margin="0,4,0,8"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Margin="6,0,0,0">
+                    <TextBlock Text="Направление" Foreground="{StaticResource Muted}" FontSize="11"/>
+                    <ComboBox x:Name="RouteTargetBox" Margin="0,4,0,8">
+                      <ComboBoxItem Content="Напрямую" Tag="MOBILE"/>
+                      <ComboBoxItem Content="Через VPNSL" Tag="VPNSL"/>
+                    </ComboBox>
+                  </StackPanel>
                 </Grid>
                 <Button Content="Добавить правило" Style="{StaticResource PrimaryButton}" Click="AddRoute_Click" Margin="0,0,0,6"/>
                 <WrapPanel>
@@ -174,31 +178,39 @@
               <StackPanel>
                 <TextBlock Text="Генератор BAT по имени сайта" FontWeight="SemiBold"/>
                 <TextBlock Text="Найдите IPv4 сайта и затем импортируйте BAT как «Напрямую» или «Через VPNSL»." Foreground="{StaticResource Muted}" FontSize="11" Margin="0,3,0,0"/>
-                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="SiteBox" Grid.Column="0" Margin="0,4,6,4" ToolTip="chatgpt.com"/><Button Grid.Column="1" Content="Найти IPv4" Click="ResolveSite_Click"/></Grid>
+                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="SiteBox" Grid.Column="0" Margin="0,4,6,4"/><Button Grid.Column="1" Content="Найти IPv4" Click="ResolveSite_Click"/></Grid>
                 <TextBlock x:Name="SiteResultText" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
                 <Button x:Name="SaveSiteBatButton" Content="Сохранить BAT сайта" Click="SaveSiteBat_Click" IsEnabled="False" HorizontalAlignment="Left"/>
               </StackPanel>
             </Border>
           </StackPanel>
-          <ListBox x:Name="RoutesList" Grid.Row="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
+
+          <Grid Grid.Row="1" Margin="0,0,0,6">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <TextBlock Text="Поиск по маршрутам" Foreground="{StaticResource Muted}" FontSize="11"/>
+            <TextBox x:Name="RouteSearchBox" Grid.Row="1" Margin="0,3,0,0" MinHeight="32" Padding="9,5" TextChanged="RouteSearchBox_TextChanged"/>
+          </Grid>
+
+          <ListBox x:Name="RoutesList" Grid.Row="2" ScrollViewer.VerticalScrollBarVisibility="Auto">
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,4">
+                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="9" Padding="8,6" Margin="0,2">
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,11,0" Checked="RouteEnabled_Changed" Unchecked="RouteEnabled_Changed"/>
+                    <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,8,0" Checked="RouteEnabled_Changed" Unchecked="RouteEnabled_Changed"/>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" Foreground="{StaticResource Text}"/>
-                      <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource Text}"/>
+                      <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                         <TextBlock Text="{Binding RouteCountDisplay}" Foreground="{StaticResource Muted}" FontSize="11"/>
                         <TextBlock Text="  •  " Foreground="{StaticResource Muted2}" FontSize="11"/>
                         <TextBlock Text="{Binding EnabledDisplay}" Foreground="{StaticResource Muted}" FontSize="11"/>
+                        <TextBlock Text="  •  " Foreground="{StaticResource Muted2}" FontSize="11"/>
+                        <TextBlock Text="{Binding Routes[0]}" Foreground="{StaticResource Muted2}" FontSize="11"/>
                       </StackPanel>
-                      <TextBlock Text="{Binding Routes[0]}" Foreground="{StaticResource Muted2}" FontSize="11" Margin="0,2,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                      <Button Content="{Binding TargetDisplay}" Tag="{Binding Id}" Click="ChangeRouteTarget_Click" Style="{StaticResource RouteTargetButton}"/>
-                      <Button Content="Удалить" Tag="{Binding Id}" Click="DeleteRoute_Click" Style="{StaticResource DangerButton}"/>
+                      <Button Content="{Binding TargetDisplay}" Tag="{Binding Id}" Click="ChangeRouteTarget_Click" Style="{StaticResource RouteTargetButton}" MinHeight="30" Padding="10,4" Margin="3,0"/>
+                      <Button Content="Удалить" Tag="{Binding Id}" Click="DeleteRoute_Click" Style="{StaticResource DangerButton}" MinHeight="30" Padding="10,4" Margin="3,0"/>
                     </StackPanel>
                   </Grid>
                 </Border>
