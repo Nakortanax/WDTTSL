@@ -19,6 +19,7 @@ OutputBaseFilename=VPNSL-1.0.2-Windows-x64-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=Assets\VPNSL.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupLogging=yes
 

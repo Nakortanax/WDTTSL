@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\VPNSL.ico</ApplicationIcon>
     <StartupObject>VPNSL.Windows.Program</StartupObject>
     <AssemblyName>VPNSL.Windows</AssemblyName>
     <RootNamespace>VPNSL.Windows</RootNamespace>
