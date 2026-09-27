@@ -1,13 +1,16 @@
-VPNSL 1.0.10 release candidate
+VPNSL 1.0.10 release marker
 
 Server deployment hardening:
 - bundled deploy.sh is normalized to LF before SSH/SFTP upload
 - UTF-8 BOM is removed
 - CR characters are rejected after normalization
-- remote /tmp/deploy.sh gets a defensive CR cleanup
-- remote bash -n syntax validation runs before any server runtime replacement
+- remote /tmp/deploy.sh gets defensive CR cleanup
+- remote bash -n syntax validation runs before server runtime replacement
 - uninstall path uses the same normalization and syntax validation
 - regression tests cover the previously observed CRLF failure
+- APK payload is verified after packaging
+- proven Linux server binaries for amd64/arm64/armv7 are embedded in the APK
+- amd64 server binary protocol marker is verified as CSQTT-WIRE-3
 
 Routing behavior remains identical to VPNSL 1.0.9:
 - full IPv4 tunnel by default
@@ -15,3 +18,10 @@ Routing behavior remains identical to VPNSL 1.0.9:
 - IP / files mode preserved
 - route generator preserved
 - Keenetic remains responsible for downstream policy routing
+
+Candidate verification:
+- GitHub Actions run 36296643209: success
+- commit 9d00aaa6d9120eff479d34629dc0c0bb68b94f3f
+- Android unit tests: success
+- embedded installer payload verification: success
+- universal APK ABI verification: success
