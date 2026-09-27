@@ -192,8 +192,8 @@ write(preflight_rel, preflight)
 # Version bump.
 gradle_rel = "app/build.gradle.kts"
 gradle = read(gradle_rel)
-gradle = re.sub(r'versionCode\\s*=\\s*\\d+', 'versionCode = 1010', gradle, count=1)
-gradle = re.sub(r'versionName\\s*=\\s*"[^"]+"', 'versionName = "1.0.10"', gradle, count=1)
+gradle = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 1010', gradle, count=1)
+gradle = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.10"', gradle, count=1)
 write(gradle_rel, gradle)
 
 screen_rel = "app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt"
