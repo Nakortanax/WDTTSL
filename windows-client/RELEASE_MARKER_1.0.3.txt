@@ -1,0 +1,11 @@
+VPNSL Windows 1.0.3 release marker
+
+Server deployment:
+- normalize deploy.sh CRLF/CR to LF
+- strip UTF-8 BOM
+- verify remote deploy.sh with bash -n before install/uninstall
+- verify SFTP upload sizes
+- normalize deploy.sh inside final Windows package
+- preserve Windows 1.0.2 routing behavior
+
+Release tag: windows-v1.0.3
