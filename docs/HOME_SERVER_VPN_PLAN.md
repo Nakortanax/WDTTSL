@@ -397,3 +397,34 @@ Ubuntu Server / VPNSL
 - TCP/46002
 
 Следующий этап: host pre-install snapshot, проверка отсутствия старой установки CSQTT/VPNSL и затем native systemd deployment.
+
+
+## Pre-install snapshot — 27.09.2026 08:01
+
+Перед установкой создан локальный снимок состояния хоста:
+
+```text
+/home/igor/vpnsl-preinstall-20260927-080104
+```
+
+Содержит:
+
+- `iptables-save.txt`
+- `nft-ruleset.txt`
+- `ip-addresses.txt`
+- `routes.txt`
+- `ip-forward.txt`
+
+Проверки перед install:
+
+```text
+existing csqtt/vpnsl systemd units: none
+/etc/csqtt: absent
+/usr/local/bin/csqtt: absent
+/usr/local/lib/csqtt: absent
+UDP/46000: free
+```
+
+Это чистая установка, конфликт со старой CSQTT/VPNSL-инсталляцией не обнаружен.
+
+Предпочтительный следующий шаг: развёртывание из финального Windows-клиента через SSH по LAN на `192.168.1.73:22` в `systemd` mode. Публичный SSH наружу для этого не нужен.
