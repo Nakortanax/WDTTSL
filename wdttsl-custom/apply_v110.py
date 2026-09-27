@@ -101,7 +101,7 @@ new_install_upload = '''        onProgress(0.06f, "Подготовка серв
 '''
 deploy = replace_required(deploy, old_install_upload, new_install_upload, "remote install script check")
 
-old_uninstall_extract = '''        uninstallScript = File(context.cacheDir, "csqtt-uninstall-\${System.nanoTime()}.sh")
+old_uninstall_extract = '''        uninstallScript = File(context.cacheDir, "csqtt-uninstall-${System.nanoTime()}.sh")
         context.assets.open("deploy.sh").use { input ->
             FileOutputStream(uninstallScript).use { output -> input.copyTo(output) }
         }
@@ -112,7 +112,7 @@ old_uninstall_extract = '''        uninstallScript = File(context.cacheDir, "csq
 
         onProgress(0.30f, "Удаление через deploy.sh...")
 '''
-new_uninstall_extract = '''        uninstallScript = File(context.cacheDir, "csqtt-uninstall-\${System.nanoTime()}.sh")
+new_uninstall_extract = '''        uninstallScript = File(context.cacheDir, "csqtt-uninstall-${System.nanoTime()}.sh")
         context.assets.open("deploy.sh").use { input ->
             val normalized = normalizeDeployShellScript(
                 input.readBytes().toString(Charsets.UTF_8),
@@ -171,7 +171,7 @@ class_anchor = '''class DeployScriptPreflightTest {
 '''
 helper_test = '''class DeployScriptPreflightTest {
     @Test
-    fun \`bundled deploy script is LF only and Android validates it remotely\`() {
+    fun `bundled deploy script is LF only and Android validates it remotely`() {
         val candidates = listOf(
             File("app/src/main/assets/deploy.sh"),
             File("src/main/assets/deploy.sh"),
