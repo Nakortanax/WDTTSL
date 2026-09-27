@@ -603,3 +603,44 @@ run: 36292367492
 commit: af120047eb131cae1a71ac6355b5edec6244a47e
 result: success
 ```
+
+
+## Android VPNSL 1.0.10 — надёжная установка сервера
+
+Создана ветка:
+
+```text
+android-v1.0.10-server-deploy-fix
+```
+
+Исправления установки/переустановки сервера из Android:
+
+- встроенный `deploy.sh` всегда нормализуется в приложении: UTF-8 BOM удаляется, `CRLF/CR -> LF`;
+- после SFTP upload на сервер выполняется дополнительная очистка CR и `bash -n /tmp/deploy.sh`;
+- установщик не переходит к замене server binary, если shell script не прошёл синтаксическую проверку;
+- тот же механизм применяется при штатном удалении сервера;
+- добавлены regression tests на ранее фактически наблюдавшуюся ошибку `$'\\r': command not found` / `set: pipefail`;
+- GitHub Actions проверяет `deploy.sh` до сборки и повторно извлекает его из готового APK, проверяя отсутствие CRLF/BOM и `bash -n`;
+- в APK гарантированно встраиваются серверные бинарники `csqtt-linux-amd64`, `csqtt-linux-arm64`, `csqtt-linux-armv7`;
+- серверные бинарники берутся из ранее опубликованного и проверенного Windows 1.0.2 server-assets пакета;
+- amd64 server binary перед упаковкой проверяется по протоколу `CSQTT-WIRE-3`;
+- готовый universal APK проверяется на наличие всех трёх server binaries.
+
+Маршрутизация 1.0.9 сохранена без изменений: Full Tunnel по умолчанию, режимы «Приложения», «IP / файлы» и генератор маршрутов.
+
+Проверенный candidate build:
+
+```text
+run: 36296643209
+commit: 9d00aaa6d9120eff479d34629dc0c0bb68b94f3f
+result: success
+```
+
+В этом run успешно прошли:
+- Android unit tests;
+- server deploy hardening checks;
+- Rust client build;
+- embedding proven Linux server binaries;
+- APK build;
+- universal APK ABI verification;
+- embedded server installer payload verification.
