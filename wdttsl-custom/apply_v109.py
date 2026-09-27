@@ -38,51 +38,64 @@ for src_name, dst_name in (
         raise SystemExit(f"missing VPNSL 1.0.9 custom file: {src}")
     shutil.copyfile(src, dst)
 
-# Locate the generated routing-mode definition from the WDTTSL overlay instead
-# of depending on its concrete filename.
-mode_candidates = []
+# Locate the generated routing-mode enum and its store independently. The
+# overlay keeps them in separate Kotlin files.
 routing_root = ROOT / "app/src/main/java/com/csqtt/client/routing"
+enum_candidates = []
+store_candidates = []
 for path in routing_root.rglob("*.kt"):
     text = path.read_text(encoding="utf-8")
-    if "enum class RoutingSourceMode" in text and "routingSourceMode" in text:
-        mode_candidates.append(path)
+    if "enum class RoutingSourceMode" in text:
+        enum_candidates.append(path)
+    if "fun routingSourceMode" in text:
+        store_candidates.append(path)
 
-if len(mode_candidates) != 1:
+if len(enum_candidates) != 1:
     raise SystemExit(
-        "VPNSL 1.0.9 expected exactly one RoutingSourceMode store, found: " +
-        ", ".join(str(p.relative_to(ROOT)) for p in mode_candidates)
+        "VPNSL 1.0.9 expected exactly one RoutingSourceMode enum, found: " +
+        ", ".join(str(p.relative_to(ROOT)) for p in enum_candidates)
+    )
+if len(store_candidates) != 1:
+    raise SystemExit(
+        "VPNSL 1.0.9 expected exactly one routingSourceMode() store, found: " +
+        ", ".join(str(p.relative_to(ROOT)) for p in store_candidates)
     )
 
-mode_path = mode_candidates[0]
-mode_text = mode_path.read_text(encoding="utf-8")
-
+enum_path = enum_candidates[0]
+enum_text = enum_path.read_text(encoding="utf-8")
 enum_pattern = re.compile(r"enum class RoutingSourceMode\s*\{(?P<body>.*?)\}", re.S)
-enum_match = enum_pattern.search(mode_text)
+enum_match = enum_pattern.search(enum_text)
 if not enum_match:
     raise SystemExit("VPNSL 1.0.9 RoutingSourceMode enum body not found")
 enum_body = enum_match.group("body")
 if "FULL_TUNNEL" not in enum_body:
     stripped = enum_body.lstrip()
     replacement = "enum class RoutingSourceMode {\n    FULL_TUNNEL,\n    " + stripped
-    mode_text = mode_text[:enum_match.start()] + replacement + mode_text[enum_match.end():]
+    enum_text = enum_text[:enum_match.start()] + replacement + enum_text[enum_match.end():]
+enum_path.write_text(enum_text, encoding="utf-8")
 
 # Change only the fallback inside routingSourceMode(), so fresh installs use
 # FULL_TUNNEL while already-saved APPLICATIONS/ROUTE_LISTS values remain valid.
-fn_start = mode_text.find("fun routingSourceMode")
+store_path = store_candidates[0]
+store_text = store_path.read_text(encoding="utf-8")
+fn_start = store_text.find("fun routingSourceMode")
 if fn_start < 0:
     raise SystemExit("VPNSL 1.0.9 routingSourceMode() function not found")
-next_fun = mode_text.find("\n    fun ", fn_start + 1)
+next_fun = store_text.find("\n    fun ", fn_start + 1)
 if next_fun < 0:
-    next_fun = len(mode_text)
-fn_segment = mode_text[fn_start:next_fun]
+    next_fun = len(store_text)
+fn_segment = store_text[fn_start:next_fun]
 if "RoutingSourceMode.APPLICATIONS" not in fn_segment:
-    raise SystemExit("VPNSL 1.0.9 default routing mode anchor not found")
+    raise SystemExit(
+        "VPNSL 1.0.9 default routing mode anchor not found in " +
+        str(store_path.relative_to(ROOT))
+    )
 fn_segment = fn_segment.replace(
     "RoutingSourceMode.APPLICATIONS",
     "RoutingSourceMode.FULL_TUNNEL",
 )
-mode_text = mode_text[:fn_start] + fn_segment + mode_text[next_fun:]
-mode_path.write_text(mode_text, encoding="utf-8")
+store_text = store_text[:fn_start] + fn_segment + store_text[next_fun:]
+store_path.write_text(store_text, encoding="utf-8")
 
 # Wrap the proven 1.0.8 APPLICATIONS/ROUTE_LISTS runtime without rewriting it.
 # FULL_TUNNEL explicitly installs 0.0.0.0/0, DNS from the server and excludes
@@ -152,7 +165,7 @@ screen = read(screen_rel).replace("1.0.8 by Sazhaev-IA", "1.0.9 by Sazhaev-IA")
 write(screen_rel, screen)
 
 # Strong invariants: new default plus all 1.0.8 optional routing/generator paths.
-mode_after = mode_path.read_text(encoding="utf-8")
+mode_after = enum_path.read_text(encoding="utf-8") + "\n" + store_path.read_text(encoding="utf-8")
 tun_after = read(tun_rel)
 exceptions = read("app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt")
 route = read("app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt")
