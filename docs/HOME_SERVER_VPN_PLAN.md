@@ -452,3 +452,25 @@ web port: 46002/tcp
 ```
 
 Пользователь не root, поэтому Windows deploy использует sudo через SSH-пароль.
+
+
+## Windows deploy CRLF bug — обнаружен 27.09.2026
+
+Первая попытка установки из финального Windows-клиента 1.0.2 завершилась сразу при запуске `/tmp/deploy.sh`:
+
+```text
+/tmp/deploy.sh: строка 4: $'\r': command not found
+/tmp/deploy.sh: строка 5: set: pipefail: недопустимое название параметра
+```
+
+Причина: shell-скрипт был загружен с Windows CRLF line endings, а Linux bash ожидает LF.
+
+В ветке `home-server-vpn` исправлен Windows deploy: перед SFTP upload `deploy.sh` теперь нормализуется в LF и отправляется UTF-8 без BOM.
+
+Fix commit:
+
+```text
+fd99c6122200bcac9cdafc96cbb799ca378c1e33
+```
+
+Финальные snapshot-ветки Android/Windows не изменялись.
