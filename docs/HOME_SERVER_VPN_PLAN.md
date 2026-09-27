@@ -474,3 +474,51 @@ fd99c6122200bcac9cdafc96cbb799ca378c1e33
 ```
 
 Финальные snapshot-ветки Android/Windows не изменялись.
+
+
+## Native systemd deployment — успешно 27.09.2026
+
+Первая ручная установка после исправления CRLF завершилась успешно.
+
+Результат:
+
+```text
+CSQTT_DEPLOY_OK
+mode: systemd
+binary: /usr/local/bin/csqtt
+unit: /etc/systemd/system/csqtt.service
+config: /etc/csqtt
+peer: UDP/46000
+web: TCP/46002
+PID: 29951
+TUN: csqtt1 active
+WAN detected by deploy.sh: enp2s0
+NAT: MASQUERADE for 10.66.67.0/24 via enp2s0
+web local health: HTTPS 401
+```
+
+Установщик подтвердил:
+- Ubuntu 26.04.1 LTS;
+- kernel 7.0.0-34-generic;
+- TUN работает;
+- iptables backend: nf_tables;
+- протокол бинарника: CSQTT-WIRE-3;
+- systemd unit создан и включён.
+
+### Важное расхождение публичного IPv4
+
+Во время шага Let's Encrypt сервер определил исходящий публичный IPv4:
+
+```text
+144.31.103.134
+```
+
+Ранее WAN IPv4 на роутере провайдера был зафиксирован как:
+
+```text
+37.79.203.247
+```
+
+Это расхождение нужно разобрать **до внешнего VPN-теста**, потому что оно может означать policy routing/VPN/NAT на Keenetic или другой асимметричный маршрут. Если входящий UDP/46000 приходит на 37.79.203.247, а ответы сервера уходят через 144.31.103.134, прямое подключение может не работать.
+
+Следующий шаг: проверить внешний IPv4 непосредственно с Ubuntu, маршрут до Интернета и состояние listener/service. Не менять port-forward до подтверждения.
