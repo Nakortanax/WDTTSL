@@ -1,11 +1,11 @@
-name: Build VPNSL 1.0.9 APK
+name: Build VPNSL 1.0.10 APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - wdttsl-build
-      - android-v1.0.9-full-tunnel
+      - android-v1.0.10-server-deploy-fix
 
 permissions:
   contents: write
@@ -131,6 +131,27 @@ jobs:
           grep -F 'Генератор BAT по имени сайта' "$route"
           grep -F 'InetAddress.getAllByName(host)' "$route"
 
+      - name: Apply VPNSL 1.0.10 server deploy hardening
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 wdttsl-custom/apply_v110.py .
+          deploy=app/src/main/java/com/csqtt/client/ui/DeployOperations.kt
+          grep -F 'versionCode = 1010' app/build.gradle.kts
+          grep -F 'versionName = "1.0.10"' app/build.gradle.kts
+          grep -F 'normalizeDeployShellScript' "$deploy"
+          grep -F "sed -i 's/\\r$//' /tmp/deploy.sh && bash -n /tmp/deploy.sh" "$deploy"
+          grep -F 'Скрипт установки проверен на сервере' "$deploy"
+          python3 - <<'PY'
+          from pathlib import Path
+          data = Path("app/src/main/assets/deploy.sh").read_bytes()
+          if b"\r" in data:
+              raise SystemExit("app/src/main/assets/deploy.sh contains CR/CRLF")
+          if data.startswith(b"\xef\xbb\xbf"):
+              raise SystemExit("app/src/main/assets/deploy.sh contains UTF-8 BOM")
+          PY
+          bash -n app/src/main/assets/deploy.sh
+
       - name: Run Android unit tests
         shell: bash
         run: |
@@ -146,7 +167,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.9-gradle-diagnostics
+          name: VPNSL-1.0.10-gradle-diagnostics
           path: |
             gradle-test.log
             app/src/main/java/com/csqtt/client/MainActivity.kt
@@ -210,6 +231,29 @@ jobs:
             file "/tmp/libclient-$abi.so"
           done
 
+      - name: Verify embedded server installer payload
+        shell: bash
+        run: |
+          set -euxo pipefail
+          universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
+          test -n "$universal"
+          unzip -p "$universal" assets/deploy.sh > /tmp/apk-deploy.sh
+          test -s /tmp/apk-deploy.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          data = Path("/tmp/apk-deploy.sh").read_bytes()
+          if b"\r" in data:
+              raise SystemExit("APK assets/deploy.sh contains CR/CRLF")
+          if data.startswith(b"\xef\xbb\xbf"):
+              raise SystemExit("APK assets/deploy.sh contains UTF-8 BOM")
+          PY
+          bash -n /tmp/apk-deploy.sh
+          for asset in csqtt-linux-amd64 csqtt-linux-arm64 csqtt-linux-armv7; do
+            unzip -l "$universal" | grep -F "assets/$asset"
+            unzip -p "$universal" "assets/$asset" > "/tmp/$asset"
+            test -s "/tmp/$asset"
+          done
+
       - name: Prepare APK artifacts
         shell: bash
         run: |
@@ -221,48 +265,50 @@ jobs:
           x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
-          cp "$arm64" dist/VPNSL-1.0.9-arm64-v8a.apk
-          cp "$armv7" dist/VPNSL-1.0.9-armeabi-v7a.apk
-          cp "$x86" dist/VPNSL-1.0.9-x86_64.apk
-          cp "$universal" dist/VPNSL-1.0.9-universal.apk
+          cp "$arm64" dist/VPNSL-1.0.10-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.10-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.10-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.10-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.9-apks
+          name: VPNSL-1.0.10-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release 1.0.9
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.9')
+      - name: Publish GitHub Release 1.0.10
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.10')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           cat > /tmp/release-notes.md <<'EOF'
-          VPNSL 1.0.9
+          VPNSL 1.0.10
 
           Основное изменение:
-          - по умолчанию весь IPv4-трафик Android направляется через VPNSL на домашний сервер;
-          - после домашнего сервера дальнейшую маршрутизацию выполняет Keenetic по своим правилам;
-          - сохранён режим «Приложения» для выборочного туннелирования приложений;
-          - сохранён режим «IP / файлы» с ручными IPv4/CIDR, импортом маршрутов и генератором BAT по домену;
-          - существующие сохранённые режимы пользователей не принудительно сбрасываются при обновлении;
-          - полный туннель исключает VPNSL/VK transport-процессы из собственного TUN, чтобы избежать рекурсии;
-          - пройдены Android unit tests, три ABI и проверка universal APK.
+          - исправлена установка/переустановка сервера из Android-приложения;
+          - встроенный deploy.sh перед отправкой по SSH/SFTP всегда нормализуется CRLF/CR -> LF;
+          - UTF-8 BOM удаляется автоматически;
+          - после загрузки на сервер выполняются дополнительная очистка CR и bash -n до изменения работающего CSQTT runtime;
+          - тот же механизм используется при штатном удалении сервера;
+          - GitHub Actions проверяет исходный deploy.sh и копию deploy.sh внутри готового APK;
+          - APK проверяется на наличие встроенных серверных бинарников amd64, arm64 и armv7;
+          - добавлены regression tests на ошибку $'\\r': command not found / set: pipefail;
+          - маршрутизация VPNSL 1.0.9 сохранена: Full Tunnel по умолчанию, «Приложения», «IP / файлы» и генератор маршрутов.
           EOF
 
-          if gh release view v1.0.9 >/dev/null 2>&1; then
-            gh release upload v1.0.9 dist/VPNSL-1.0.9-*.apk dist/SHA256SUMS.txt --clobber
-            gh release edit v1.0.9 --title "VPNSL 1.0.9" --notes-file /tmp/release-notes.md
+          if gh release view v1.0.10 >/dev/null 2>&1; then
+            gh release upload v1.0.10 dist/VPNSL-1.0.10-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.10 --title "VPNSL 1.0.10" --notes-file /tmp/release-notes.md
           else
-            gh release create v1.0.9 \
-              dist/VPNSL-1.0.9-*.apk \
+            gh release create v1.0.10 \
+              dist/VPNSL-1.0.10-*.apk \
               dist/SHA256SUMS.txt \
               --target "$GITHUB_SHA" \
-              --title "VPNSL 1.0.9" \
+              --title "VPNSL 1.0.10" \
               --notes-file /tmp/release-notes.md
           fi
