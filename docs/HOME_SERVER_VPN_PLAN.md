@@ -522,3 +522,22 @@ web local health: HTTPS 401
 Это расхождение нужно разобрать **до внешнего VPN-теста**, потому что оно может означать policy routing/VPN/NAT на Keenetic или другой асимметричный маршрут. Если входящий UDP/46000 приходит на 37.79.203.247, а ответы сервера уходят через 144.31.103.134, прямое подключение может не работать.
 
 Следующий шаг: проверить внешний IPv4 непосредственно с Ubuntu, маршрут до Интернета и состояние listener/service. Не менять port-forward до подтверждения.
+
+
+## Post-deploy verification — service healthy, upstream public-IP mismatch remains
+
+Проверено после успешного native systemd deploy:
+
+```text
+curl api.ipify.org -> 144.31.103.134
+ip route get 1.1.1.1 -> via 192.168.1.1 dev enp2s0 src 192.168.1.73
+UDP/46000 -> csqtt listening on 0.0.0.0:46000
+csqtt.service -> active (running)
+PID -> 29951
+web -> 0.0.0.0:46002
+TUN -> Userspace TUN (CSQTT)
+```
+
+Вывод: сам Ubuntu/CSQTT работает корректно, а расхождение публичного IPv4 возникает выше по сети — после шлюза `192.168.1.1`, то есть на Keenetic/его policy routing/VPN или дальше.
+
+До внешнего теста нужно определить, почему LAN Ubuntu выходит наружу как `144.31.103.134`, когда PPPoE WAN провайдерского роутера показывает `37.79.203.247`.
