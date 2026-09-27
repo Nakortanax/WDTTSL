@@ -216,6 +216,39 @@ jobs:
           cp ../build/rust-client-android-x86_64/x86_64-linux-android/release/client ../app/src/main/jniLibs/x86_64/libclient.so
           file ../app/src/main/jniLibs/*/libclient.so
 
+      - name: Embed proven Linux server binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/vpnsl-win-server-assets /tmp/vpnsl-win-package
+          mkdir -p /tmp/vpnsl-win-server-assets /tmp/vpnsl-win-package
+          gh release download windows-v1.0.2             --repo "$GITHUB_REPOSITORY"             --pattern 'VPNSL-1.0.2-Windows-x64.zip'             --dir /tmp/vpnsl-win-server-assets
+          unzip -q /tmp/vpnsl-win-server-assets/VPNSL-1.0.2-Windows-x64.zip -d /tmp/vpnsl-win-package
+          server_assets="$(find /tmp/vpnsl-win-package -type d -name server-assets | head -n1)"
+          test -n "$server_assets"
+          mkdir -p app/src/main/assets
+          for asset in csqtt-linux-amd64 csqtt-linux-arm64 csqtt-linux-armv7; do
+            test -s "$server_assets/$asset"
+            cp "$server_assets/$asset" "app/src/main/assets/$asset"
+            chmod 0755 "app/src/main/assets/$asset"
+            file "app/src/main/assets/$asset"
+          done
+          test "$(app/src/main/assets/csqtt-linux-amd64 --protocol-revision)" = "CSQTT-WIRE-3"
+          test -s app/src/main/assets/deploy.sh
+          bash -n app/src/main/assets/deploy.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path("app/src/main/assets/deploy.sh").read_bytes()
+          if b"\r" in script or script.startswith(b"\xef\xbb\xbf"):
+              raise SystemExit("deploy.sh must be UTF-8/LF without BOM before APK packaging")
+          for name in ("csqtt-linux-amd64", "csqtt-linux-arm64", "csqtt-linux-armv7"):
+              path = Path("app/src/main/assets") / name
+              if not path.is_file() or path.stat().st_size < 1_000_000:
+                  raise SystemExit(f"server asset missing or unexpectedly small: {name}")
+          PY
+
       - name: Build debug APKs
         shell: bash
         run: |
@@ -301,7 +334,8 @@ jobs:
           - после загрузки на сервер выполняются дополнительная очистка CR и bash -n до изменения работающего CSQTT runtime;
           - тот же механизм используется при штатном удалении сервера;
           - GitHub Actions проверяет исходный deploy.sh и копию deploy.sh внутри готового APK;
-          - APK проверяется на наличие встроенных серверных бинарников amd64, arm64 и armv7;
+          - в APK теперь гарантированно встраиваются проверенные серверные бинарники amd64, arm64 и armv7 из опубликованного Windows 1.0.2 пакета;
+          - перед упаковкой amd64-бинарник проверяется по маркеру протокола CSQTT-WIRE-3, а готовый APK проверяется на наличие всех трёх серверных бинарников;
           - добавлены regression tests на ошибку $'\\r': command not found / set: pipefail;
           - маршрутизация VPNSL 1.0.9 сохранена: Full Tunnel по умолчанию, «Приложения», «IP / файлы» и генератор маршрутов.
           EOF
