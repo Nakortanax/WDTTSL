@@ -1,5 +1,27 @@
-VPNSL 1.0.9 release candidate marker
-Default mode: full IPv4 tunnel through VPNSL
-Optional modes preserved: selected applications and IP/CIDR route lists
-Generator preserved: domain -> IPv4 -> BAT
-Home routing model: VPNSL -> Ubuntu -> Keenetic policy routing
+VPNSL 1.0.9 release marker
+
+Default mode:
+- full IPv4 tunnel through VPNSL on fresh install
+
+Optional modes preserved:
+- selected applications
+- IP/CIDR route lists
+- imported route files
+- domain -> IPv4 -> BAT generator
+
+Home routing model:
+- Android -> VPNSL -> Ubuntu -> Keenetic policy routing
+- Keenetic decides direct ISP vs Amnezia WG
+
+Compatibility:
+- CSQTT-WIRE-3 server protocol preserved
+- existing saved routing mode is preserved on upgrade
+
+Candidate verification:
+- GitHub Actions run 36292367492: success
+- Android unit tests: success
+- Rust client: arm64-v8a / armeabi-v7a / x86_64
+- universal APK native ABI verification: success
+
+Release branch:
+- android-v1.0.9-full-tunnel
