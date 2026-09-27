@@ -346,3 +346,54 @@ gateway: 192.168.1.1
 2. создать router port-forward `UDP 46000 -> 192.168.1.73:46000`;
 3. пока не пробрасывать наружу TCP/22, TCP/46002 и TCP/80;
 4. после этого выполнить локальный pre-install snapshot iptables/nftables и установить CSQTT в native systemd mode.
+
+
+## Router port-forward — выполнено 27.09.2026
+
+Домашняя схема использует двойной NAT.
+
+Публичный IPv4 на роутере провайдера:
+
+```text
+37.79.203.247
+```
+
+WAN-адрес Keenetic в сети роутера провайдера:
+
+```text
+192.168.0.13
+```
+
+LAN-адрес Ubuntu Server за Keenetic:
+
+```text
+192.168.1.73
+```
+
+Настроена цепочка проброса:
+
+```text
+Internet
+37.79.203.247:46000/UDP
+        |
+        v
+ISP router
+192.168.0.13:46000/UDP
+        |
+        v
+Keenetic
+192.168.1.73:46000/UDP
+        |
+        v
+Ubuntu Server / VPNSL
+```
+
+На обоих роутерах пробрасывается только `UDP/46000`.
+
+Не проброшены наружу:
+
+- TCP/22
+- TCP/80
+- TCP/46002
+
+Следующий этап: host pre-install snapshot, проверка отсутствия старой установки CSQTT/VPNSL и затем native systemd deployment.
