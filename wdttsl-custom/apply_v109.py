@@ -69,8 +69,12 @@ if not enum_match:
     raise SystemExit("VPNSL 1.0.9 RoutingSourceMode enum body not found")
 enum_body = enum_match.group("body")
 if "FULL_TUNNEL" not in enum_body:
-    stripped = enum_body.lstrip()
-    replacement = "enum class RoutingSourceMode {\n    FULL_TUNNEL,\n    " + stripped
+    original_enum = enum_match.group(0)
+    replacement = original_enum.replace(
+        "{",
+        "{\n    FULL_TUNNEL,",
+        1,
+    )
     enum_text = enum_text[:enum_match.start()] + replacement + enum_text[enum_match.end():]
 enum_path.write_text(enum_text, encoding="utf-8")
 
