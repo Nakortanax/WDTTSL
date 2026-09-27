@@ -38,7 +38,7 @@ internal sealed class ServerDeployService
         using (var sftp = CreateSftpClient(settings))
         {
             await Task.Run(sftp.Connect, cancellationToken);
-            await UploadFileAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
+            await UploadShellScriptAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
             await UploadFileAsync(sftp, serverBinary, "/tmp/.csqtt-upload-server", cancellationToken);
 
             var webEnv = BuildWebEnv(settings);
@@ -81,7 +81,7 @@ internal sealed class ServerDeployService
         using (var sftp = CreateSftpClient(settings))
         {
             await Task.Run(sftp.Connect, cancellationToken);
-            await UploadFileAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
+            await UploadShellScriptAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
             sftp.Disconnect();
         }
 
@@ -189,6 +189,13 @@ internal sealed class ServerDeployService
     {
         await using var stream = File.OpenRead(localPath);
         await Task.Run(() => sftp.UploadFile(stream, remotePath, true), cancellationToken);
+    }
+
+    private static async Task UploadShellScriptAsync(SftpClient sftp, string localPath, string remotePath, CancellationToken cancellationToken)
+    {
+        var text = await File.ReadAllTextAsync(localPath, cancellationToken);
+        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        await UploadBytesAsync(sftp, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(text), remotePath, cancellationToken);
     }
 
     private static async Task UploadBytesAsync(SftpClient sftp, byte[] bytes, string remotePath, CancellationToken cancellationToken)
