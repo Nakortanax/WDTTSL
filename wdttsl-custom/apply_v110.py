@@ -181,7 +181,8 @@ helper_test = '''class DeployScriptPreflightTest {
 
         val client = deployOperations()
         assertTrue(client.contains("normalizeDeployShellScript"))
-        assertTrue(client.contains("sed -i 's/\\\\r$//' /tmp/deploy.sh && bash -n /tmp/deploy.sh"))
+        assertTrue(client.contains("bash -n /tmp/deploy.sh"))
+        assertTrue(client.contains("scriptCheck.exitStatus != 0"))
         assertTrue(client.contains("Скрипт установки проверен на сервере"))
     }
 
