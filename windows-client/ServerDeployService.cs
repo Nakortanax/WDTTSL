@@ -38,7 +38,15 @@ internal sealed class ServerDeployService
         using (var sftp = CreateSftpClient(settings))
         {
             await Task.Run(sftp.Connect, cancellationToken);
-            await UploadFileAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
+            await UploadShellScriptAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
+
+            var scriptCheck = await RunCommandAsync(
+                ssh,
+                "sed -i 's/\\r$//' /tmp/deploy.sh && bash -n /tmp/deploy.sh",
+                cancellationToken);
+            EnsureSuccess(scriptCheck, "Встроенный deploy.sh повреждён после загрузки");
+            _log("[SERVER] deploy.sh нормализован и проверен через bash -n");
+
             await UploadFileAsync(sftp, serverBinary, "/tmp/.csqtt-upload-server", cancellationToken);
 
             var webEnv = BuildWebEnv(settings);
@@ -66,7 +74,7 @@ internal sealed class ServerDeployService
         settings.Password = settings.ServerMainPassword;
         SettingsStore.Save(settings);
         _status?.Invoke("Сервер установлен");
-        _log("[SERVER] VPNSL 1.0.8 установлен успешно");
+        _log("[SERVER] VPNSL Windows 1.0.3: сервер установлен успешно");
     }
 
     public async Task UninstallAsync(AppSettings settings, CancellationToken cancellationToken = default)
@@ -81,7 +89,15 @@ internal sealed class ServerDeployService
         using (var sftp = CreateSftpClient(settings))
         {
             await Task.Run(sftp.Connect, cancellationToken);
-            await UploadFileAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
+            await UploadShellScriptAsync(sftp, deployScript, "/tmp/deploy.sh", cancellationToken);
+
+            var scriptCheck = await RunCommandAsync(
+                ssh,
+                "sed -i 's/\\r$//' /tmp/deploy.sh && bash -n /tmp/deploy.sh",
+                cancellationToken);
+            EnsureSuccess(scriptCheck, "Встроенный deploy.sh повреждён после загрузки");
+            _log("[SERVER] deploy.sh для удаления нормализован и проверен через bash -n");
+
             sftp.Disconnect();
         }
 
@@ -187,14 +203,43 @@ internal sealed class ServerDeployService
 
     private static async Task UploadFileAsync(SftpClient sftp, string localPath, string remotePath, CancellationToken cancellationToken)
     {
+        var expectedLength = new FileInfo(localPath).Length;
         await using var stream = File.OpenRead(localPath);
         await Task.Run(() => sftp.UploadFile(stream, remotePath, true), cancellationToken);
+        var actualLength = sftp.GetAttributes(remotePath).Size;
+        if (actualLength != expectedLength)
+            throw new IOException($"SFTP: размер {Path.GetFileName(localPath)} после загрузки не совпадает: {actualLength} != {expectedLength}");
     }
+
+    private static async Task UploadShellScriptAsync(SftpClient sftp, string localPath, string remotePath, CancellationToken cancellationToken)
+    {
+        var text = await File.ReadAllTextAsync(localPath, cancellationToken);
+        text = NormalizeDeployShellScript(text);
+        if (!text.StartsWith("#!/", StringComparison.Ordinal))
+            throw new InvalidDataException("Встроенный deploy.sh не содержит корректный shebang.");
+        if (text.Contains('\r'))
+            throw new InvalidDataException("Встроенный deploy.sh содержит CR после нормализации.");
+
+        await UploadBytesAsync(
+            sftp,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(text),
+            remotePath,
+            cancellationToken);
+    }
+
+    internal static string NormalizeDeployShellScript(string text) =>
+        text
+            .TrimStart('\uFEFF')
+            .Replace("\r\n", "\n")
+            .Replace("\r", "\n");
 
     private static async Task UploadBytesAsync(SftpClient sftp, byte[] bytes, string remotePath, CancellationToken cancellationToken)
     {
         using var stream = new MemoryStream(bytes, writable: false);
         await Task.Run(() => sftp.UploadFile(stream, remotePath, true), cancellationToken);
+        var actualLength = sftp.GetAttributes(remotePath).Size;
+        if (actualLength != bytes.LongLength)
+            throw new IOException($"SFTP: размер {Path.GetFileName(remotePath)} после загрузки не совпадает: {actualLength} != {bytes.LongLength}");
     }
 
     private static string BuildWebEnv(AppSettings settings)
@@ -250,6 +295,8 @@ internal sealed class ServerDeployService
     {
         if (!File.Exists(path))
             throw new FileNotFoundException($"Отсутствует файл для установки сервера: {Path.GetFileName(path)}", path);
+        if (new FileInfo(path).Length == 0)
+            throw new InvalidDataException($"Файл для установки сервера пуст: {Path.GetFileName(path)}");
         return path;
     }
 
