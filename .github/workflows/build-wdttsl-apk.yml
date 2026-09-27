@@ -1,10 +1,11 @@
-name: Build VPNSL 1.0.8 APK
+name: Build VPNSL 1.0.9 APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - wdttsl-build
+      - android-v1.0.9-full-tunnel
 
 permissions:
   contents: write
@@ -110,6 +111,24 @@ jobs:
           grep -F 'InetAddress.getAllByName(host)' "$route"
           grep -F 'M54,17 L83,28' app/src/main/res/drawable/ic_launcher_foreground.xml
 
+      - name: Apply VPNSL 1.0.9 full-tunnel default
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 wdttsl-custom/apply_v109.py .
+          tun=app/src/main/java/com/csqtt/client/TunVpnService.kt
+          route=app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
+          exceptions=app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
+          grep -F 'versionCode = 1009' app/build.gradle.kts
+          grep -F 'versionName = "1.0.9"' app/build.gradle.kts
+          grep -F '1.0.9 by Sazhaev-IA' app/src/main/java/com/csqtt/client/ui/components/CsqttScreen.kt
+          grep -F 'RoutingSourceMode.FULL_TUNNEL to "Весь трафик"' "$exceptions"
+          grep -F 'builder.addRoute("0.0.0.0", 0)' "$tun"
+          grep -F 'if (routingSourceMode == RoutingSourceMode.APPLICATIONS)' "$tun"
+          grep -F 'RoutePolicyApplier.apply(builder, routeListStore.loadProfiles())' "$tun"
+          grep -F 'Генератор BAT по имени сайта' "$route"
+          grep -F 'InetAddress.getAllByName(host)' "$route"
+
       - name: Run Android unit tests
         shell: bash
         run: |
@@ -125,7 +144,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.8-gradle-diagnostics
+          name: VPNSL-1.0.9-gradle-diagnostics
           path: |
             gradle-test.log
             app/src/main/java/com/csqtt/client/MainActivity.kt
@@ -200,51 +219,48 @@ jobs:
           x86="$(find app/build/outputs/apk/debug -type f -name '*x86_64*debug*.apk' | head -n1)"
           universal="$(find app/build/outputs/apk/debug -type f -name '*universal*debug*.apk' | head -n1)"
           test -n "$arm64" && test -n "$armv7" && test -n "$x86" && test -n "$universal"
-          cp "$arm64" dist/VPNSL-1.0.8-arm64-v8a.apk
-          cp "$armv7" dist/VPNSL-1.0.8-armeabi-v7a.apk
-          cp "$x86" dist/VPNSL-1.0.8-x86_64.apk
-          cp "$universal" dist/VPNSL-1.0.8-universal.apk
+          cp "$arm64" dist/VPNSL-1.0.9-arm64-v8a.apk
+          cp "$armv7" dist/VPNSL-1.0.9-armeabi-v7a.apk
+          cp "$x86" dist/VPNSL-1.0.9-x86_64.apk
+          cp "$universal" dist/VPNSL-1.0.9-universal.apk
           sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VPNSL-1.0.8-apks
+          name: VPNSL-1.0.9-apks
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release 1.0.8
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.8')
+      - name: Publish GitHub Release 1.0.9
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Release VPNSL 1.0.9')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           cat > /tmp/release-notes.md <<'EOF'
-          VPNSL 1.0.8
+          VPNSL 1.0.9
 
-          База маршрутизации: рабочая VPNSL 1.0.7 / точная логика 1.0.5.
-
-          Изменения интерфейса:
-          - полностью убран выраженный круглый/pill-стиль основных элементов;
-          - нижняя навигация переделана по референсу: отдельная синяя прямоугольная плашка под иконкой активной вкладки, подпись расположена ниже;
-          - глобальные радиусы карточек и контролов уменьшены до 6–12 dp;
-          - на экране подключения добавлена отдельная широкая прямоугольная кнопка «Подключить / Отключить»;
-          - логотип подключения уменьшен и используется как статусный элемент;
-          - прямоугольный стиль автоматически применяется к карточкам, сегментам, диалогам и большинству кнопок через общую систему Shapes;
-          - маршрутизация приложений, IP/CIDR и файлов не менялась относительно 1.0.7;
+          Основное изменение:
+          - по умолчанию весь IPv4-трафик Android направляется через VPNSL на домашний сервер;
+          - после домашнего сервера дальнейшую маршрутизацию выполняет Keenetic по своим правилам;
+          - сохранён режим «Приложения» для выборочного туннелирования приложений;
+          - сохранён режим «IP / файлы» с ручными IPv4/CIDR, импортом маршрутов и генератором BAT по домену;
+          - существующие сохранённые режимы пользователей не принудительно сбрасываются при обновлении;
+          - полный туннель исключает VPNSL/VK transport-процессы из собственного TUN, чтобы избежать рекурсии;
           - пройдены Android unit tests, три ABI и проверка universal APK.
           EOF
 
-          if gh release view v1.0.8 >/dev/null 2>&1; then
-            gh release upload v1.0.8 dist/VPNSL-1.0.8-*.apk dist/SHA256SUMS.txt --clobber
-            gh release edit v1.0.8 --title "VPNSL 1.0.8" --notes-file /tmp/release-notes.md
+          if gh release view v1.0.9 >/dev/null 2>&1; then
+            gh release upload v1.0.9 dist/VPNSL-1.0.9-*.apk dist/SHA256SUMS.txt --clobber
+            gh release edit v1.0.9 --title "VPNSL 1.0.9" --notes-file /tmp/release-notes.md
           else
-            gh release create v1.0.8 \
-              dist/VPNSL-1.0.8-*.apk \
+            gh release create v1.0.9 \
+              dist/VPNSL-1.0.9-*.apk \
               dist/SHA256SUMS.txt \
               --target "$GITHUB_SHA" \
-              --title "VPNSL 1.0.8" \
+              --title "VPNSL 1.0.9" \
               --notes-file /tmp/release-notes.md
           fi
