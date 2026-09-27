@@ -1,0 +1,5 @@
+VPNSL 1.0.9 release candidate marker
+Default mode: full IPv4 tunnel through VPNSL
+Optional modes preserved: selected applications and IP/CIDR route lists
+Generator preserved: domain -> IPv4 -> BAT
+Home routing model: VPNSL -> Ubuntu -> Keenetic policy routing
