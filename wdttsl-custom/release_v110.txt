@@ -1,0 +1,17 @@
+VPNSL 1.0.10 release candidate
+
+Server deployment hardening:
+- bundled deploy.sh is normalized to LF before SSH/SFTP upload
+- UTF-8 BOM is removed
+- CR characters are rejected after normalization
+- remote /tmp/deploy.sh gets a defensive CR cleanup
+- remote bash -n syntax validation runs before any server runtime replacement
+- uninstall path uses the same normalization and syntax validation
+- regression tests cover the previously observed CRLF failure
+
+Routing behavior remains identical to VPNSL 1.0.9:
+- full IPv4 tunnel by default
+- Applications mode preserved
+- IP / files mode preserved
+- route generator preserved
+- Keenetic remains responsible for downstream policy routing
