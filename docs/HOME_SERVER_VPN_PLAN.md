@@ -299,3 +299,50 @@ weightdiarybot_default   172.18.0.0/16
 LAN-адрес `192.168.1.73` получен по DHCP. До настройки router port-forward нужно сделать DHCP reservation/static lease для этого адреса, иначе проброс `UDP/46000` может сломаться после смены LAN-IP.
 
 Следующая проверка перед установкой: TUN, текущий `ip_forward`, iptables backend/policies, отсутствие маршрута `10.66.67.0/24`, а также снимок текущих NAT/FORWARD правил Docker.
+
+
+## Network preflight #2 — 27.09.2026
+
+Проверено на домашнем Ubuntu Server:
+
+```text
+net.ipv4.ip_forward = 1
+/dev/net/tun exists and is rw-rw-rw-
+10.66.67.0/24 is not present in current route tables
+iptables v1.8.11 (nf_tables backend)
+FORWARD policy = DROP
+```
+
+Текущий `FORWARD` обслуживается Docker:
+
+```text
+-A FORWARD -j DOCKER-USER
+-A FORWARD -j DOCKER-FORWARD
+```
+
+Текущий NAT:
+
+```text
+172.17.0.0/16 -> MASQUERADE
+172.18.0.0/16 -> MASQUERADE
+```
+
+Docker сети не конфликтуют с планируемой CSQTT-подсетью `10.66.67.0/24`.
+
+Текущий `deploy.sh` добавляет собственные ACCEPT-правила для CSQTT TUN через `iptables -I FORWARD` и отдельный `POSTROUTING MASQUERADE` для `10.66.67.0/24`, поэтому политика `FORWARD DROP` сама по себе не блокирует архитектуру. При установке нужно обязательно проверить порядок правил после deploy и убедиться, что Docker chains сохранились.
+
+WAN/LAN interface:
+
+```text
+enp2s0
+MAC: 2c:f0:5d:d8:ca:80
+LAN IPv4: 192.168.1.73/24
+gateway: 192.168.1.1
+```
+
+Следующий безопасный шаг перед install:
+
+1. закрепить `192.168.1.73` за MAC `2c:f0:5d:d8:ca:80` в DHCP reservation роутера;
+2. создать router port-forward `UDP 46000 -> 192.168.1.73:46000`;
+3. пока не пробрасывать наружу TCP/22, TCP/46002 и TCP/80;
+4. после этого выполнить локальный pre-install snapshot iptables/nftables и установить CSQTT в native systemd mode.
