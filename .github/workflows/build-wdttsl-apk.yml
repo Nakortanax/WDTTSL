@@ -140,10 +140,14 @@ jobs:
           grep -F 'versionCode = 1010' app/build.gradle.kts
           grep -F 'versionName = "1.0.10"' app/build.gradle.kts
           grep -F 'normalizeDeployShellScript' "$deploy"
-          grep -F "sed -i 's/\\r$//' /tmp/deploy.sh && bash -n /tmp/deploy.sh" "$deploy"
+          grep -F 'bash -n /tmp/deploy.sh' "$deploy"
           grep -F 'Скрипт установки проверен на сервере' "$deploy"
           python3 - <<'PY'
           from pathlib import Path
+          deploy = Path("app/src/main/java/com/csqtt/client/ui/DeployOperations.kt").read_text(encoding="utf-8")
+          expected = r"sed -i 's/\\r$//' /tmp/deploy.sh && bash -n /tmp/deploy.sh"
+          if expected not in deploy:
+              raise SystemExit("DeployOperations.kt does not contain defensive CR cleanup + bash -n")
           data = Path("app/src/main/assets/deploy.sh").read_bytes()
           if b"\r" in data:
               raise SystemExit("app/src/main/assets/deploy.sh contains CR/CRLF")
@@ -173,6 +177,7 @@ jobs:
             app/src/main/java/com/csqtt/client/MainActivity.kt
             app/src/main/java/com/csqtt/client/TunVpnService.kt
             app/src/main/java/com/csqtt/client/ui/ConnectionTab.kt
+            app/src/main/java/com/csqtt/client/ui/DeployOperations.kt
             app/src/main/java/com/csqtt/client/ui/ExceptionsTab.kt
             app/src/main/java/com/csqtt/client/ui/PromoRoutingHeader.kt
             app/src/main/java/com/csqtt/client/ui/RouteListsSection.kt
