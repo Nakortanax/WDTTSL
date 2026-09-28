@@ -114,6 +114,15 @@ services:
   - name: "Управление сервером"
     icon: "fas fa-screwdriver-wrench"
     items:
+      - name: "Состояние сервера"
+        type: "Glances"
+        icon: "fas fa-heart-pulse"
+        url: "http://192.168.1.73:61208"
+        stats: [cpu, mem, load, swap]
+        tag: "LIVE"
+        tagstyle: "is-success"
+        target: "_blank"
+
       - name: "SSH"
         type: "CopyToClipboard"
         icon: "fas fa-terminal"
@@ -134,12 +143,6 @@ services:
         icon: "fab fa-docker"
         subtitle: "Контейнеры Docker"
         tag: "HOST"
-        tagstyle: "is-success"
-
-      - name: "Host Metrics"
-        icon: "fas fa-chart-line"
-        subtitle: "Метрики хоста"
-        tag: "SYSTEMD"
         tagstyle: "is-success"
 
       - name: "System Updater"
