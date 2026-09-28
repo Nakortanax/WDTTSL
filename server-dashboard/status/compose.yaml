@@ -38,7 +38,6 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PORT: "8090"
       DOCKER_PROXY: "http://dockerproxy:2375"
-      SYSTEMD_STATUS_URL: "http://192.168.1.73:8091"
       ADGUARD_URL: "http://192.168.1.73:8080/"
       VPNSL_URL: "https://192.168.1.73:46002/"
       KEENETIC_URL: "http://192.168.1.1/"
