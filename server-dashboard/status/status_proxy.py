@@ -58,13 +58,34 @@ def http_check(url, insecure=False, timeout=2.5):
     }
 
 
-def docker_containers():
+def docker_raw_containers():
     url = f"{DOCKER_PROXY}/containers/json?all=true"
     req = Request(url, method="GET", headers={"User-Agent": USER_AGENT})
     with urlopen(req, timeout=2.5) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    # Homer only needs State. Do not expose container env, mounts or labels.
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def docker_containers():
+    data = docker_raw_containers()
     return [{"State": str(item.get("State", "unknown"))} for item in data]
+
+
+def docker_service_states():
+    data = docker_raw_containers()
+    expected = {
+        "weightdiary": "weightdiarybot-bot-1",
+        "ollama": "weightdiarybot-ollama-1",
+        "postgres": "weightdiarybot-db-1",
+    }
+    states = {}
+    for item in data:
+        state = str(item.get("State", "unknown"))
+        for raw_name in item.get("Names", []):
+            states[str(raw_name).lstrip("/")] = state
+    return {
+        key: {"ok": states.get(container) == "running"}
+        for key, container in expected.items()
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -135,6 +156,18 @@ class Handler(BaseHTTPRequestHandler):
                     "service": "docker",
                     "error": exc.__class__.__name__,
                 }, head)
+            return
+
+        if path.startswith("/health/docker-service/"):
+            name = path.split("/", 3)[3].strip().lower()
+            try:
+                item = docker_service_states().get(name)
+                if item is None:
+                    self._json(404, {"ok": False, "error": "unknown docker service"}, head)
+                    return
+                self._json(200 if item["ok"] else 503, {"service": name, **item}, head)
+            except Exception as exc:
+                self._json(503, {"ok": False, "service": name, "error": exc.__class__.__name__}, head)
             return
 
         if path == "/containers/json":
