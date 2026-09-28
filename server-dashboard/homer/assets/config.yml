@@ -113,9 +113,12 @@ services:
         target: "_blank"
 
       - name: "Samba"
-        type: "CopyToClipboard"
+        type: "Ping"
         icon: "fas fa-folder-open"
-        subtitle: "Скопировать адрес общей папки"
+        subtitle: "Общие папки · TCP :445"
+        endpoint: "http://192.168.1.73:8090/health/tcp/samba"
+        method: "get"
+        timeout: 3000
         tag: "SMB"
         tagstyle: "is-info"
         clipboard: "\\\\192.168.1.73"
@@ -171,20 +174,26 @@ services:
     icon: "fas fa-screwdriver-wrench"
     items:
       - name: "SSH"
-        type: "CopyToClipboard"
+        type: "Ping"
         icon: "fas fa-terminal"
-        subtitle: "Скопировать SSH-команду"
+        subtitle: "Удалённая консоль · TCP :22"
+        endpoint: "http://192.168.1.73:8090/health/tcp/ssh"
+        method: "get"
+        timeout: 3000
         tag: "SSH"
         tagstyle: "is-info"
-        clipboard: "ssh igor@192.168.1.73"
+        url: "ssh://igor@192.168.1.73"
 
       - name: "Remote Desktop"
-        type: "CopyToClipboard"
+        type: "Ping"
         icon: "fas fa-desktop"
-        subtitle: "XRDP · скопировать адрес :3389"
+        subtitle: "XRDP · TCP :3389"
+        endpoint: "http://192.168.1.73:8090/health/tcp/xrdp"
+        method: "get"
+        timeout: 3000
         tag: "RDP"
         tagstyle: "is-info"
-        clipboard: "192.168.1.73:3389"
+        url: "rdp://192.168.1.73:3389"
 
       - name: "System Updater"
         icon: "fas fa-arrows-rotate"
