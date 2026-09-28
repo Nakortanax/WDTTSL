@@ -245,3 +245,76 @@ status: healthy
 HTTP check: 200 OK
 ```
 Конфигурация панели хранится в ветке `home-dashboard-homer` в `server-dashboard/homer/`.
+## Homer / Monitoring — 28.09.2026
+
+Финальное рабочее состояние панели:
+
+```text
+Homer:
+  URL: http://192.168.1.73:8088
+  container: homer
+  image: b4bz/homer:latest
+  status: healthy
+  bind: 192.168.1.73:8088 -> 8080/tcp
+
+Glances:
+  URL/API: http://192.168.1.73:61208
+  container: glances
+  image: nicolargo/glances:latest
+  bind: 192.168.1.73:61208 -> 61208/tcp
+  API version checked: 4.5.7
+
+Live status layer:
+  container: homer-status
+  image: python:3.12-alpine
+  bind: 192.168.1.73:8090 -> 8090/tcp
+
+Docker socket proxy:
+  container: homer-docker-proxy
+  image: tecnativa/docker-socket-proxy:latest
+  2375/tcp: internal Docker network only, NOT published on host
+  POST disabled
+  CONTAINERS GET allowed
+```
+
+Подтверждённые live checks:
+- AdGuard Home;
+- VPNSL / CSQTT;
+- Keenetic;
+- Jellyfin;
+- Transmission;
+- Fuel;
+- Homer;
+- Glances;
+- Docker container count;
+- WeightDiaryBot;
+- Ollama;
+- PostgreSQL 17;
+- SSH TCP/22;
+- Samba TCP/445;
+- XRDP TCP/3389.
+
+Во время проверки Docker status layer было 9 running / 0 stopped / 9 total containers.
+
+Статическими оставлены:
+- System Updater;
+- GPN Fuel Bot;
+- GPN Stations Editor.
+
+Отдельный systemd helper на 8091 обсуждался, но пользователь решил не устанавливать. Он удалён из финальной GitHub-конфигурации панели.
+
+Файлы:
+```text
+branch: home-dashboard-homer
+server-dashboard/homer/
+server-dashboard/glances/
+server-dashboard/status/
+```
+
+Не публиковать наружу через ISP/Keenetic:
+- 8088/tcp Homer;
+- 61208/tcp Glances;
+- 8090/tcp status proxy;
+- Docker proxy 2375 вообще не публиковать на host.
+
+Секреты/API keys/passwords в Homer/status конфигурации не хранятся.
