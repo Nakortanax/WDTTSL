@@ -1,0 +1,23 @@
+services:
+  homer:
+    image: b4bz/homer:latest
+    container_name: homer
+    restart: unless-stopped
+
+    user: "1000:1000"
+
+    environment:
+      - INIT_ASSETS=0
+      - IPV6_DISABLE=1
+
+    volumes:
+      - ./assets:/www/assets:ro
+
+    ports:
+      - "192.168.1.73:8088:8080"
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
