@@ -11,6 +11,8 @@ from urllib.request import Request, urlopen
 
 PORT = int(os.getenv("PORT", "8090"))
 DOCKER_PROXY = os.getenv("DOCKER_PROXY", "http://dockerproxy:2375").rstrip("/")
+SYSTEMD_STATUS_URL = os.getenv("SYSTEMD_STATUS_URL", "http://192.168.1.73:8091").rstrip("/")
+SYSTEMD_NAMES = {"system-updater", "host-metrics", "gpn-bot", "gpn-editor", "csqtt"}
 
 TARGETS = {
     "adguard": (os.getenv("ADGUARD_URL", "http://192.168.1.73:8080/"), False),
@@ -172,6 +174,16 @@ class Handler(BaseHTTPRequestHandler):
                     "service": "docker",
                     "error": exc.__class__.__name__,
                 }, head)
+            return
+
+        if path.startswith("/health/systemd/"):
+            name = path.split("/", 3)[3].strip().lower()
+            if name not in SYSTEMD_NAMES:
+                self._json(404, {"ok": False, "error": "unknown systemd service"}, head)
+                return
+            result = http_check(f"{SYSTEMD_STATUS_URL}/service/{name}", False)
+            result["service"] = name
+            self._json(200 if result["ok"] else 503, result, head)
             return
 
         if path.startswith("/health/tcp/"):
