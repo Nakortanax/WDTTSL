@@ -115,3 +115,25 @@ XRDP  192.168.1.73:3389  -> ok: true
 /health/tcp/samba
 /health/tcp/xrdp
 ```
+
+
+## Финальный scope — 28.09.2026
+
+Остановились на текущем наборе живых проверок.
+
+Работают:
+- HTTP/HTTPS: AdGuard, VPNSL, Keenetic, Jellyfin, Transmission, Fuel, Homer, Glances;
+- Docker: общее число контейнеров;
+- Docker-backed: WeightDiaryBot, Ollama, PostgreSQL;
+- TCP: SSH, Samba, XRDP.
+
+Systemd helper и endpoints `/health/systemd/*` в финальный вариант не входят и не установлены.
+
+Порты:
+
+```text
+8090/tcp -> homer-status, bind only 192.168.1.73
+2375/tcp -> docker-socket-proxy internal Docker network only
+```
+
+Наружу через роутеры эти порты не пробрасывать.
