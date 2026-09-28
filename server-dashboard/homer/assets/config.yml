@@ -1,0 +1,164 @@
+---
+title: "Home Server"
+subtitle: "192.168.1.73"
+documentTitle: "Home Server"
+icon: "fas fa-server"
+
+header: true
+footer: false
+columns: "4"
+connectivityCheck: true
+
+defaults:
+  layout: columns
+  colorTheme: dark
+  iconWidth: fixed
+
+links:
+  - name: "WDTTSL"
+    icon: "fab fa-github"
+    url: "https://github.com/Nakortanax/WDTTSL"
+    target: "_blank"
+
+  - name: "WeightDiaryBot"
+    icon: "fab fa-github"
+    url: "https://github.com/Nakortanax/WeightDiaryBot"
+    target: "_blank"
+
+services:
+  - name: "Сеть и безопасность"
+    icon: "fas fa-shield-halved"
+    items:
+      - name: "AdGuard Home"
+        icon: "fas fa-shield"
+        subtitle: "DNS и блокировка рекламы · 192.168.1.73:8080"
+        tag: "DNS"
+        tagstyle: "is-success"
+        url: "http://192.168.1.73:8080"
+        target: "_blank"
+
+      - name: "VPNSL / CSQTT"
+        icon: "fas fa-lock"
+        subtitle: "VPN-сервер · HTTPS 46002"
+        tag: "VPN"
+        tagstyle: "is-info"
+        url: "https://192.168.1.73:46002"
+        target: "_blank"
+
+      - name: "Keenetic"
+        icon: "fas fa-router"
+        subtitle: "Домашний маршрутизатор · 192.168.1.1"
+        tag: "LAN"
+        tagstyle: "is-info"
+        url: "http://192.168.1.1"
+        target: "_blank"
+
+  - name: "Медиа"
+    icon: "fas fa-photo-film"
+    items:
+      - name: "Jellyfin"
+        icon: "fas fa-film"
+        subtitle: "Медиасервер · 192.168.1.73:8096"
+        tag: "WEB"
+        tagstyle: "is-success"
+        url: "http://192.168.1.73:8096"
+        target: "_blank"
+
+      - name: "Transmission"
+        icon: "fas fa-download"
+        subtitle: "Торренты · 192.168.1.73:9091"
+        tag: "WEB"
+        tagstyle: "is-success"
+        url: "http://192.168.1.73:9091"
+        target: "_blank"
+
+      - name: "Samba"
+        type: "CopyToClipboard"
+        icon: "fas fa-folder-open"
+        subtitle: "Скопировать адрес общей папки"
+        tag: "SMB"
+        tagstyle: "is-info"
+        clipboard: "\\\\192.168.1.73"
+
+  - name: "Наши приложения"
+    icon: "fas fa-cubes"
+    items:
+      - name: "Топливо"
+        icon: "fas fa-gas-pump"
+        subtitle: "Fuel service · 192.168.1.73:8081"
+        tag: "WEB"
+        tagstyle: "is-success"
+        url: "http://192.168.1.73:8081"
+        target: "_blank"
+
+      - name: "WeightDiaryBot"
+        icon: "fab fa-telegram"
+        subtitle: "Дневник, ИИ, серверные функции"
+        tag: "BOT"
+        tagstyle: "is-info"
+        url: "https://github.com/Nakortanax/WeightDiaryBot"
+        target: "_blank"
+
+      - name: "Ollama"
+        icon: "fas fa-robot"
+        subtitle: "Локальный ИИ · внутренний 11434"
+        tag: "INTERNAL"
+        tagstyle: "is-warning"
+
+      - name: "PostgreSQL 17"
+        icon: "fas fa-database"
+        subtitle: "База WeightDiaryBot · внутренний 5432"
+        tag: "INTERNAL"
+        tagstyle: "is-warning"
+
+  - name: "Управление сервером"
+    icon: "fas fa-screwdriver-wrench"
+    items:
+      - name: "SSH"
+        type: "CopyToClipboard"
+        icon: "fas fa-terminal"
+        subtitle: "Скопировать команду подключения"
+        tag: "SSH"
+        tagstyle: "is-info"
+        clipboard: "ssh igor@192.168.1.73"
+
+      - name: "Remote Desktop"
+        type: "CopyToClipboard"
+        icon: "fas fa-desktop"
+        subtitle: "XRDP · скопировать адрес"
+        tag: "RDP"
+        tagstyle: "is-info"
+        clipboard: "192.168.1.73:3389"
+
+      - name: "Docker"
+        icon: "fab fa-docker"
+        subtitle: "WeightDiaryBot + AdGuard Home + Homer"
+        tag: "HOST"
+        tagstyle: "is-success"
+
+      - name: "Host Metrics"
+        icon: "fas fa-chart-line"
+        subtitle: "weightdiary-host-metrics.service"
+        tag: "SYSTEMD"
+        tagstyle: "is-success"
+
+      - name: "System Updater"
+        icon: "fas fa-arrows-rotate"
+        subtitle: "weightdiary-system-updater.service"
+        tag: "SYSTEMD"
+        tagstyle: "is-success"
+
+  - name: "Legacy"
+    icon: "fas fa-box-archive"
+    items:
+      - name: "GPN Fuel Bot"
+        icon: "fas fa-gas-pump"
+        subtitle: "gpn-bot.service"
+        tag: "LEGACY"
+        tagstyle: "is-warning"
+
+      - name: "GPN Stations Editor"
+        icon: "fas fa-pen-to-square"
+        subtitle: "gpn-editor.service · localhost:8080"
+        tag: "LOCAL"
+        tagstyle: "is-warning"
