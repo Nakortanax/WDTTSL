@@ -81,3 +81,35 @@ sudo docker compose stop
 - Не добавлять в YAML пароли, токены, API keys или private keys.
 - Не менять существующие Docker volumes.
 - Не изменять VPNSL/CSQTT, WeightDiaryBot, Jellyfin, Transmission или AdGuard при установке панели.
+
+
+## Подтверждённая установка — 28.09.2026
+
+Homer успешно развёрнут на домашнем сервере.
+
+```text
+Container: homer
+Image: b4bz/homer:latest
+Status: healthy
+Bind: 192.168.1.73:8088 -> 8080/tcp
+HTTP check: HTTP/1.1 200 OK
+Server: lighttpd/1.4.85
+```
+
+Проверено командами:
+
+```bash
+cd /opt/homer
+sudo docker compose ps
+curl -I http://192.168.1.73:8088
+```
+
+На момент проверки контейнер был `Up ... (healthy)`.
+
+Первый `docker compose up -d` завис на pull/finalization образа до создания контейнера. После отдельного:
+
+```bash
+sudo docker pull b4bz/homer:latest
+```
+
+повторный `docker compose up -d` завершился успешно.
