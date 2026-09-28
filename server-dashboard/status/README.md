@@ -96,3 +96,22 @@ Sanitized Docker endpoint вернул только состояния девя�
 {"service":"ollama","ok":true}
 {"service":"postgres","ok":true}
 ```
+
+
+## Host TCP checks
+
+28.09.2026 подтверждены живые TCP-проверки сервисов хоста:
+
+```text
+SSH   192.168.1.73:22    -> ok: true
+Samba 192.168.1.73:445   -> ok: true
+XRDP  192.168.1.73:3389  -> ok: true
+```
+
+Проверенные endpoints:
+
+```text
+/health/tcp/ssh
+/health/tcp/samba
+/health/tcp/xrdp
+```
