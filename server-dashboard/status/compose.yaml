@@ -1,0 +1,67 @@
+services:
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: homer-docker-proxy
+    restart: unless-stopped
+
+    environment:
+      CONTAINERS: "1"
+      POST: "0"
+      EVENTS: "0"
+      PING: "1"
+      VERSION: "0"
+      LOG_LEVEL: "warning"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    expose:
+      - "2375"
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+  status:
+    image: python:3.12-alpine
+    container_name: homer-status
+    restart: unless-stopped
+
+    depends_on:
+      - dockerproxy
+
+    user: "65534:65534"
+
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PORT: "8090"
+      DOCKER_PROXY: "http://dockerproxy:2375"
+      ADGUARD_URL: "http://192.168.1.73:8080/"
+      VPNSL_URL: "https://192.168.1.73:46002/"
+      KEENETIC_URL: "http://192.168.1.1/"
+      JELLYFIN_URL: "http://192.168.1.73:8096/"
+      TRANSMISSION_URL: "http://192.168.1.73:9091/transmission/web/"
+      FUEL_URL: "http://192.168.1.73:8081/"
+      HOMER_URL: "http://192.168.1.73:8088/"
+      GLANCES_URL: "http://192.168.1.73:61208/api/4/status"
+
+    volumes:
+      - ./status_proxy.py:/app/status_proxy.py:ro
+
+    command: ["python", "/app/status_proxy.py"]
+
+    ports:
+      - "192.168.1.73:8090:8090"
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
