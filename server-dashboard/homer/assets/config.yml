@@ -196,22 +196,8 @@ services:
         url: "rdp://192.168.1.73:3389"
 
       - name: "System Updater"
-        type: "Ping"
         icon: "fas fa-arrows-rotate"
         subtitle: "Системные обновления"
-        endpoint: "http://192.168.1.73:8090/health/systemd/system-updater"
-        method: "get"
-        timeout: 3000
-        tag: "SYSTEMD"
-        tagstyle: "is-success"
-
-      - name: "Host Metrics Agent"
-        type: "Ping"
-        icon: "fas fa-chart-line"
-        subtitle: "Сбор метрик WeightDiaryBot"
-        endpoint: "http://192.168.1.73:8090/health/systemd/host-metrics"
-        method: "get"
-        timeout: 3000
         tag: "SYSTEMD"
         tagstyle: "is-success"
 
@@ -219,21 +205,13 @@ services:
     icon: "fas fa-box-archive"
     items:
       - name: "GPN Fuel Bot"
-        type: "Ping"
         icon: "fas fa-gas-pump"
         subtitle: "Старый Telegram-бот · gpn-bot"
-        endpoint: "http://192.168.1.73:8090/health/systemd/gpn-bot"
-        method: "get"
-        timeout: 3000
         tag: "LEGACY"
         tagstyle: "is-warning"
 
       - name: "GPN Stations Editor"
-        type: "Ping"
         icon: "fas fa-pen-to-square"
         subtitle: "Редактор станций · localhost:8080"
-        endpoint: "http://192.168.1.73:8090/health/systemd/gpn-editor"
-        method: "get"
-        timeout: 3000
         tag: "LOCAL"
         tagstyle: "is-warning"
