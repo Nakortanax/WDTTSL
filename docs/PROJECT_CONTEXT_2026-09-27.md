@@ -202,3 +202,37 @@ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 ```
 
 Не удалять Docker volumes и не применять destructive reset-команды без отдельного решения.
+
+
+## AdGuard Home / Keenetic DNS — 28.09.2026
+
+Актуальная фиксация состояния:
+
+```text
+AdGuard Home: Docker
+DNS: 192.168.1.73:53 TCP/UDP
+Web: http://192.168.1.73:8080
+Keenetic DNS: 192.168.1.73
+Ignore ISP DNSv4: enabled
+```
+
+Глобальные DoT/DoH на Keenetic были удалены, чтобы DNS не обходил AdGuard. Пользователь сообщил, что в списке DNS оставлен только `192.168.1.73`.
+
+tcpdump подтвердил рабочий участок:
+
+```text
+192.168.1.1 -> 192.168.1.73:53
+```
+
+На контрольном скриншоте AdGuard:
+- 5451 DNS-запрос;
+- 189 заблокировано (~3%);
+- 99.96% запросов от Keenetic `192.168.1.1`;
+- upstream в панели: `9.9.9.9:53` и `1.1.1.1:53`.
+
+Во время диагностики прямые UDP/53-запросы с Ubuntu к публичным DNS временно возвращали `REFUSED`. HTTPS к `https://cloudflare-dns.com/dns-query` устанавливался, а прямой `https://1.1.1.1/dns-query` и `https://dns.google/dns-query` не подключались. На момент финального скриншота AdGuard активно обрабатывал запросы.
+
+Подробности:
+`docs/ADGUARD_KEENETIC_2026-09-28.md`.
+
+Homer для единой панели сервисов только запланирован; не установлен.
