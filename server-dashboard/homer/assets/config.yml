@@ -26,28 +26,60 @@ links:
     target: "_blank"
 
 services:
+  - name: "Мониторинг"
+    icon: "fas fa-chart-line"
+    items:
+      - name: "Ресурсы сервера"
+        type: "Glances"
+        icon: "fas fa-heart-pulse"
+        url: "http://192.168.1.73:61208"
+        stats: [cpu, mem, load, swap]
+        tag: "LIVE"
+        tagstyle: "is-success"
+        target: "_blank"
+
+      - name: "Docker"
+        type: "DockerSocketProxy"
+        icon: "fab fa-docker"
+        subtitle: "Контейнеры"
+        endpoint: "http://192.168.1.73:8090"
+        tag: "LIVE"
+        tagstyle: "is-success"
+
   - name: "Сеть и безопасность"
     icon: "fas fa-shield-halved"
     items:
       - name: "AdGuard Home"
+        type: "Ping"
         icon: "fas fa-shield"
         subtitle: "DNS-фильтрация · :8080"
+        endpoint: "http://192.168.1.73:8090/health/adguard"
+        method: "get"
+        timeout: 3000
         tag: "DNS"
         tagstyle: "is-success"
         url: "http://192.168.1.73:8080"
         target: "_blank"
 
       - name: "VPNSL / CSQTT"
+        type: "Ping"
         icon: "fas fa-lock"
         subtitle: "VPN-сервер · HTTPS :46002"
+        endpoint: "http://192.168.1.73:8090/health/vpnsl"
+        method: "get"
+        timeout: 3000
         tag: "VPN"
         tagstyle: "is-info"
         url: "https://192.168.1.73:46002"
         target: "_blank"
 
       - name: "Keenetic"
+        type: "Ping"
         icon: "fas fa-network-wired"
         subtitle: "Маршрутизатор · 192.168.1.1"
+        endpoint: "http://192.168.1.73:8090/health/keenetic"
+        method: "get"
+        timeout: 3000
         tag: "LAN"
         tagstyle: "is-info"
         url: "http://192.168.1.1"
@@ -57,16 +89,24 @@ services:
     icon: "fas fa-photo-film"
     items:
       - name: "Jellyfin"
+        type: "Ping"
         icon: "fas fa-film"
         subtitle: "Медиасервер · :8096"
+        endpoint: "http://192.168.1.73:8090/health/jellyfin"
+        method: "get"
+        timeout: 3000
         tag: "WEB"
         tagstyle: "is-success"
         url: "http://192.168.1.73:8096"
         target: "_blank"
 
       - name: "Transmission"
+        type: "Ping"
         icon: "fas fa-download"
         subtitle: "Торренты · :9091"
+        endpoint: "http://192.168.1.73:8090/health/transmission"
+        method: "get"
+        timeout: 3000
         tag: "WEB"
         tagstyle: "is-success"
         url: "http://192.168.1.73:9091"
@@ -84,8 +124,12 @@ services:
     icon: "fas fa-cubes"
     items:
       - name: "Топливо"
+        type: "Ping"
         icon: "fas fa-gas-pump"
         subtitle: "Топливо · :8081"
+        endpoint: "http://192.168.1.73:8090/health/fuel"
+        method: "get"
+        timeout: 3000
         tag: "WEB"
         tagstyle: "is-success"
         url: "http://192.168.1.73:8081"
@@ -114,15 +158,6 @@ services:
   - name: "Управление сервером"
     icon: "fas fa-screwdriver-wrench"
     items:
-      - name: "Состояние сервера"
-        type: "Glances"
-        icon: "fas fa-heart-pulse"
-        url: "http://192.168.1.73:61208"
-        stats: [cpu, mem, load, swap]
-        tag: "LIVE"
-        tagstyle: "is-success"
-        target: "_blank"
-
       - name: "SSH"
         type: "CopyToClipboard"
         icon: "fas fa-terminal"
@@ -138,12 +173,6 @@ services:
         tag: "RDP"
         tagstyle: "is-info"
         clipboard: "192.168.1.73:3389"
-
-      - name: "Docker"
-        icon: "fab fa-docker"
-        subtitle: "Контейнеры Docker"
-        tag: "HOST"
-        tagstyle: "is-success"
 
       - name: "System Updater"
         icon: "fas fa-arrows-rotate"
