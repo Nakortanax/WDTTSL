@@ -235,4 +235,13 @@ tcpdump подтвердил рабочий участок:
 Подробности:
 `docs/ADGUARD_KEENETIC_2026-09-28.md`.
 
-Homer для единой панели сервисов только запланирован; не установлен.
+Homer установлен и работает:
+```text
+URL: http://192.168.1.73:8088
+container: homer
+image: b4bz/homer:latest
+bind: 192.168.1.73:8088 -> 8080/tcp
+status: healthy
+HTTP check: 200 OK
+```
+Конфигурация панели хранится в ветке `home-dashboard-homer` в `server-dashboard/homer/`.
