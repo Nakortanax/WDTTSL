@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import socket
 import ssl
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +21,12 @@ TARGETS = {
     "fuel": (os.getenv("FUEL_URL", "http://192.168.1.73:8081/"), False),
     "homer": (os.getenv("HOMER_URL", "http://192.168.1.73:8088/"), False),
     "glances": (os.getenv("GLANCES_URL", "http://192.168.1.73:61208/api/4/status"), False),
+}
+
+TCP_TARGETS = {
+    "ssh": ("192.168.1.73", 22),
+    "samba": ("192.168.1.73", 445),
+    "xrdp": ("192.168.1.73", 3389),
 }
 
 USER_AGENT = "VPNSL-Home-Dashboard-Status/1.0"
@@ -56,6 +63,26 @@ def http_check(url, insecure=False, timeout=2.5):
         "status_code": code,
         "latency_ms": round((time.monotonic() - start) * 1000),
     }
+
+
+def tcp_check(host, port, timeout=2.0):
+    start = time.monotonic()
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return {
+                "ok": True,
+                "latency_ms": round((time.monotonic() - start) * 1000),
+                "host": host,
+                "port": int(port),
+            }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "latency_ms": round((time.monotonic() - start) * 1000),
+            "host": host,
+            "port": int(port),
+            "error": exc.__class__.__name__,
+        }
 
 
 def docker_raw_containers():
@@ -145,6 +172,17 @@ class Handler(BaseHTTPRequestHandler):
                     "service": "docker",
                     "error": exc.__class__.__name__,
                 }, head)
+            return
+
+        if path.startswith("/health/tcp/"):
+            name = path.split("/", 3)[3].strip().lower()
+            target = TCP_TARGETS.get(name)
+            if target is None:
+                self._json(404, {"ok": False, "error": "unknown tcp service"}, head)
+                return
+            result = tcp_check(target[0], target[1])
+            result["service"] = name
+            self._json(200 if result["ok"] else 503, result, head)
             return
 
         if path.startswith("/health/docker-service/"):
