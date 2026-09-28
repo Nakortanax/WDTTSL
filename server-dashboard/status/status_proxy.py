@@ -127,17 +127,6 @@ class Handler(BaseHTTPRequestHandler):
             }, head)
             return
 
-        if path.startswith("/health/"):
-            name = path.split("/", 2)[2].strip().lower()
-            target = TARGETS.get(name)
-            if target is None:
-                self._json(404, {"ok": False, "error": "unknown service"}, head)
-                return
-            result = http_check(target[0], target[1])
-            result["service"] = name
-            self._json(200 if result["ok"] else 503, result, head)
-            return
-
         if path == "/health/docker":
             try:
                 items = docker_containers()
@@ -168,6 +157,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200 if item["ok"] else 503, {"service": name, **item}, head)
             except Exception as exc:
                 self._json(503, {"ok": False, "service": name, "error": exc.__class__.__name__}, head)
+            return
+
+        if path.startswith("/health/"):
+            name = path.split("/", 2)[2].strip().lower()
+            target = TARGETS.get(name)
+            if target is None:
+                self._json(404, {"ok": False, "error": "unknown service"}, head)
+                return
+            result = http_check(target[0], target[1])
+            result["service"] = name
+            self._json(200 if result["ok"] else 503, result, head)
             return
 
         if path == "/containers/json":
