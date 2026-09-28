@@ -75,3 +75,24 @@ Sanitized Docker endpoint вернул только состояния девя�
 ```json
 [{"State":"running"} ... x9]
 ```
+
+
+## Docker-backed internal services
+
+28.09.2026 подтверждены дополнительные health endpoints:
+
+```text
+/health/docker-service/weightdiary -> ok: true
+/health/docker-service/ollama      -> ok: true
+/health/docker-service/postgres    -> ok: true
+```
+
+Исправлен порядок маршрутов: `/health/docker-service/*` должен обрабатываться раньше общего `/health/*`, иначе возвращается `unknown service`.
+
+Проверенный результат:
+
+```json
+{"service":"weightdiary","ok":true}
+{"service":"ollama","ok":true}
+{"service":"postgres","ok":true}
+```
