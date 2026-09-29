@@ -26,9 +26,7 @@ HTTP:      200 OK
 - Jellyfin;
 - Transmission;
 - Fuel service;
-- WeightDiaryBot;
-- Ollama;
-- PostgreSQL 17;
+- WeightDiaryBot (топливо, сервер, климат);
 - SSH;
 - Samba;
 - XRDP.
@@ -96,3 +94,11 @@ sudo docker compose stop
 ```
 
 Не использовать `docker compose down -v`.
+
+
+## Актуализация — 29.09.2026
+
+После упрощения WeightDiaryBot из панели удалены отдельные карточки Ollama и PostgreSQL 17.
+Локальный ИИ и дневник больше не входят в активную архитектуру Telegram-бота.
+
+Текущий раздел «Наши приложения» содержит Fuel service и WeightDiaryBot.
