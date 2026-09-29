@@ -1,16 +1,18 @@
-# Restore checklist — Home VPNSL server
+# Restore checklist — Home server
 
-## 1. Сеть
+Актуализация: 29.09.2026.
 
-На Ubuntu восстановить постоянный LAN адрес:
+## 1. Базовая сеть
+
+Ubuntu:
 
 ```text
-192.168.1.73/24
-gateway 192.168.1.1
-interface enp2s0
+LAN: 192.168.1.73/24
+gateway: 192.168.1.1
+interface: enp2s0
 ```
 
-На роутерах восстановить только:
+Public VPNSL path:
 
 ```text
 Internet UDP/46000
@@ -19,9 +21,19 @@ Internet UDP/46000
  -> Ubuntu 192.168.1.73:46000/UDP
 ```
 
-По умолчанию не открывать наружу TCP/22, TCP/80, TCP/46002.
+По умолчанию НЕ открывать наружу:
+- 22/tcp;
+- 53/tcp/udp;
+- 46002/tcp;
+- 8080/tcp;
+- 8088/tcp;
+- 8090/tcp;
+- 8096/tcp;
+- 9091/tcp;
+- 61208/tcp;
+- Samba/XRDP.
 
-## 2. Сервер
+## 2. CSQTT
 
 Требования:
 
@@ -33,15 +45,7 @@ iptables/nft compatible
 net.ipv4.ip_forward=1
 ```
 
-Установщик и серверный код брать из этого репозитория.
-
-Предпочтительный режим:
-
-```text
-native systemd
-```
-
-Ожидаемые пути после deploy:
+Ожидаемые пути:
 
 ```text
 /usr/local/bin/csqtt
@@ -49,15 +53,17 @@ native systemd
 /etc/systemd/system/csqtt.service
 ```
 
-## 3. Секреты
+Параметры:
 
-Не брать из GitHub. Ввести заново:
-- основной пароль VPNSL;
-- web login/password;
-- SSH credentials;
-- клиентские VK hashes/tokens.
+```text
+version: 2.1.9
+wire: CSQTT-WIRE-3
+peer: UDP/46000
+web: HTTPS/TCP/46002
+VPN subnet: 10.66.67.0/24
+```
 
-## 4. Проверка после восстановления
+Проверка:
 
 ```bash
 sudo systemctl status csqtt --no-pager -l
@@ -69,37 +75,168 @@ sudo iptables -S FORWARD
 sudo iptables -t nat -S POSTROUTING
 ```
 
-Ожидается:
-- csqtt active;
-- UDP/46000 listening;
-- TUN csqtt1;
-- IPv4 forwarding = 1;
-- NAT/MASQUERADE для 10.66.67.0/24.
+## 3. AdGuard Home
 
-## 5. Клиентский тест
+Docker paths:
+
+```text
+/opt/adguardhome/conf
+/opt/adguardhome/work
+```
+
+Порты:
+
+```text
+192.168.1.73:53 -> 53/tcp+udp
+192.168.1.73:8080 -> 80/tcp
+```
+
+Keenetic:
+- DNS = `192.168.1.73`;
+- ignore ISP DNSv4 = enabled;
+- не возвращать глобальные DoT/DoH, если цель — обязательный проход через AdGuard.
+
+Проверка:
+
+```bash
+nslookup example.com 192.168.1.73
+```
+
+## 4. Homer dashboard
+
+GitHub source:
+
+```text
+branch: home-dashboard-homer
+server-dashboard/homer/
+```
+
+Server path:
+
+```text
+/opt/homer/
+```
+
+Ожидаемый URL:
+
+```text
+http://192.168.1.73:8088
+```
+
+Проверка:
+
+```bash
+cd /opt/homer
+sudo docker compose up -d
+sudo docker compose ps
+curl -I http://192.168.1.73:8088
+```
+
+## 5. Glances
+
+GitHub source:
+
+```text
+server-dashboard/glances/
+```
+
+Server path:
+
+```text
+/opt/glances/
+```
+
+Проверка:
+
+```bash
+cd /opt/glances
+sudo docker compose up -d
+curl -s http://192.168.1.73:61208/api/4/status
+```
+
+Ожидаемая проверенная версия: `4.5.7`.
+
+## 6. Homer status layer
+
+GitHub source:
+
+```text
+server-dashboard/status/
+```
+
+Server path:
+
+```text
+/opt/homer-status/
+```
+
+Контейнеры:
+- `homer-status`;
+- `homer-docker-proxy`.
+
+Проверка:
+
+```bash
+cd /opt/homer-status
+sudo docker compose up -d
+sudo docker compose ps
+curl -s http://192.168.1.73:8090/summary
+```
+
+Docker proxy 2375 не должен быть опубликован на host.
+
+Отдельный systemd helper на 8091 не требуется и в финальный вариант не входит.
+
+## 7. Остальные сервисы
+
+После восстановления проверить:
+- WeightDiaryBot;
+- PostgreSQL;
+- Ollama;
+- Fuel;
+- Jellyfin;
+- Transmission;
+- Samba;
+- XRDP;
+- SSH.
+
+Не удалять volumes и не использовать `docker compose down -v`.
+
+## 8. Секреты
+
+Не брать из GitHub. Восстановить из отдельного защищённого хранилища:
+- VPNSL main password;
+- CSQTT web login/password;
+- SSH credentials;
+- VK hashes/tokens;
+- TLS private keys;
+- AdGuard credentials;
+- другие API keys/secrets.
+
+## 9. Клиентский тест
 
 Android:
 
 ```text
-release v1.0.10
-branch final/android-v1.0.10
+v1.0.10
+final/android-v1.0.10
 ```
 
 Windows:
 
 ```text
-release windows-v1.0.3
-branch final/windows-v1.0.3
+windows-v1.0.3
+final/windows-v1.0.3
 ```
 
-Проверять из внешней сети подключение к:
+Проверять VPNSL из внешней сети на:
 
 ```text
 37.79.203.247:46000/UDP
 ```
 
-После подключения внешний IP может быть:
-- 37.79.203.247 при direct ISP;
-- 144.31.103.134 при маршруте Keenetic через Amnezia WG.
+Ожидаемый public exit:
+- `37.79.203.247` direct ISP;
+- `144.31.103.134` через Amnezia WG.
 
-Оба варианта штатные.
+Оба варианта штатны.
