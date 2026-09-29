@@ -331,3 +331,51 @@ GitHub backup хранит код, deployment-конфиги и recovery knowled
 - важные Docker volumes/bind mounts;
 - медиаданные/общие папки по отдельной политике;
 - при необходимости локальный safe snapshot через `server-backup/export_safe_snapshot.sh`.
+
+
+## Подготовка удаления локального ИИ и дневника — 29.09.2026
+
+Пользователь принял решение удалить локальный ИИ/Ollama и дневник из активного Telegram-бота.
+
+GitHub-подготовка выполнена до изменений живого сервера.
+
+WeightDiaryBot:
+```text
+main: 9fa10f39cca3f430a84c4350b4f56db9c24d7902
+backup before change: backup/pre-remove-ai-diary-2026-09-29
+```
+
+Целевая активная Docker-архитектура WeightDiaryBot:
+```text
+fuel
+bot
+```
+
+Из Compose и runtime-кода удалены:
+- Ollama / локальная модель;
+- PostgreSQL как зависимость дневника;
+- дневник;
+- AI chat;
+- OCR/vision/Huawei Health;
+- diary_data и связанные handlers/tests.
+
+Старый PostgreSQL volume на живом сервере пока не удалять: сохранить как безопасную
+историческую точку данных до отдельного решения после проверки новой версии.
+
+Ollama/model volume должен быть удалён после успешного обновления живого сервера и проверки,
+что оставшиеся сервисы от него не зависят.
+
+Homer:
+```text
+branch: home-dashboard-homer
+commit: 6e5b1a943267353236ef3c7a9959908c4a5a41e2
+backup before change: backup/pre-remove-ai-diary-dashboard-2026-09-29
+```
+
+Из целевой панели удалены карточки Ollama и PostgreSQL 17. Карточка WeightDiaryBot
+оставлена как Telegram-сервис «Топливо · сервер · климат». Status proxy больше не ожидает
+старые контейнеры Ollama/PostgreSQL.
+
+ВАЖНО: этот раздел фиксирует подготовленное GitHub-состояние. На момент записи live deployment
+на Ubuntu ещё не подтверждён. Не считать Ollama/дневник удалёнными с физического сервера,
+пока не выполнены pull/redeploy, проверка Telegram/Docker/Homer и финальный checkpoint.
