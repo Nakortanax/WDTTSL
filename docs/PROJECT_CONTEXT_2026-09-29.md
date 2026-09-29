@@ -379,3 +379,40 @@ backup before change: backup/pre-remove-ai-diary-dashboard-2026-09-29
 ВАЖНО: этот раздел фиксирует подготовленное GitHub-состояние. На момент записи live deployment
 на Ubuntu ещё не подтверждён. Не считать Ollama/дневник удалёнными с физического сервера,
 пока не выполнены pull/redeploy, проверка Telegram/Docker/Homer и финальный checkpoint.
+
+
+## Live cleanup completed — 29.09.2026
+
+WeightDiaryBot live server cleanup подтверждён пользователем после успешной проверки новой версии.
+
+Удалено с Ubuntu runtime:
+- `weightdiarybot-ollama-1`;
+- `weightdiarybot-db-1`;
+- `weightdiarybot_ollama_data`;
+- image `ollama/ollama:latest`.
+
+Активные контейнеры проекта:
+```text
+weightdiarybot-bot-1
+weightdiarybot-fuel-1
+```
+
+Сохранены как страховочная точка данных:
+```text
+weightdiarybot_postgres_data
+weightdiarybot_diary_data
+```
+
+Сохранён рабочий volume:
+```text
+weightdiarybot_fuel_data
+```
+
+Дисковое пространство после удаления Ollama/model data:
+```text
+root filesystem: ~28G used / ~66G free
+Docker images: ~4.742GB
+```
+
+Следующий шаг: применить подготовленный `home-dashboard-homer` на live Homer/status proxy и проверить,
+что карточки Ollama/PostgreSQL исчезли, а WeightDiaryBot остаётся online.
