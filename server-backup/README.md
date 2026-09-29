@@ -1,12 +1,12 @@
-# Home VPNSL server backup
+# Home server backup
 
-Дата снимка: 27.09.2026.
+Дата актуализации: 29.09.2026.
 
-Эта папка нужна как безопасная резервная копия знаний о домашнем VPNSL/CSQTT-сервере. Она позволяет восстановить сервер и продолжить работу даже без истории чата.
+Эта папка хранит безопасную резервную копию знаний о домашнем сервере и recovery-инструкции. Это не byte-for-byte образ диска.
 
-## Что уже хранится в GitHub
+## Что хранится в GitHub
 
-Серверный код и установщик:
+Серверный код и установщик VPNSL/CSQTT:
 
 ```text
 rust-server/
@@ -14,63 +14,75 @@ shared/
 app/src/main/assets/deploy.sh
 ```
 
-Документация текущего состояния:
+Актуальная документация:
 
 ```text
+docs/PROJECT_CONTEXT_2026-09-29.md
+docs/ADGUARD_KEENETIC_2026-09-28.md
 docs/HOME_SERVER_VPN_PLAN.md
-docs/WINDOWS_SERVER_DEPLOY_FIX_1.0.3.md
+server-backup/RESTORE.md
+server-backup/BACKUP_MANIFEST_2026-09-29.md
 ```
 
-Актуальные клиентские snapshots:
+Dashboard/monitoring конфиги находятся в отдельной рабочей ветке:
 
 ```text
-final/android-v1.0.10
-final/windows-v1.0.3
+home-dashboard-homer
+server-dashboard/homer/
+server-dashboard/glances/
+server-dashboard/status/
 ```
 
-Релизы:
+Клиентские snapshots:
 
 ```text
-Android: v1.0.10
-Windows: windows-v1.0.3
+Android: final/android-v1.0.10
+Windows: final/windows-v1.0.3
 ```
 
-## Текущая схема
+## Текущая архитектура
 
 ```text
 Internet
   |
-  | 37.79.203.247:46000/UDP
+  | UDP/46000
   v
 ISP router
   |
-  | -> Keenetic WAN 192.168.0.13
   v
 Keenetic
   |
-  | -> Ubuntu 192.168.1.73:46000/UDP
   v
-Ubuntu / CSQTT 2.1.9
+Ubuntu 192.168.1.73
   |
-  +-> direct ISP -> 37.79.203.247
-  |
-  +-> Amnezia WG -> 144.31.103.134
+  +-- CSQTT 2.1.9
+  +-- AdGuard Home
+  +-- Homer
+  +-- Glances
+  +-- Homer status proxy
+  +-- Docker workloads
+  +-- Jellyfin / Transmission / Samba / XRDP / SSH
 ```
 
-Ubuntu:
+## Основные адреса
 
 ```text
-LAN: 192.168.1.73/24
-gateway: 192.168.1.1
-interface: enp2s0
-service: csqtt.service
-binary: /usr/local/bin/csqtt
-config: /etc/csqtt
-VPN subnet: 10.66.67.0/24
-peer: UDP/46000
-web: TCP/46002
-wire: CSQTT-WIRE-3
+Keenetic:       192.168.1.1
+Ubuntu:         192.168.1.73
+VPN subnet:     10.66.67.0/24
+
+CSQTT peer:     UDP/46000
+CSQTT web:      TCP/46002
+AdGuard DNS:    192.168.1.73:53
+AdGuard UI:     http://192.168.1.73:8080
+Homer:          http://192.168.1.73:8088
+Status API:     http://192.168.1.73:8090
+Jellyfin:       http://192.168.1.73:8096
+Transmission:   http://192.168.1.73:9091
+Glances:        http://192.168.1.73:61208
 ```
+
+Публично пробрасывать по умолчанию только UDP/46000.
 
 ## Секреты
 
@@ -79,15 +91,27 @@ wire: CSQTT-WIRE-3
 Никогда не коммитить:
 - SSH passwords/private keys;
 - VPNSL main password;
-- web-panel credentials;
+- CSQTT web credentials;
 - VK hashes/tokens;
 - TLS private keys;
-- secret contents of /etc/csqtt;
-- /tmp/.csqtt-upload-web.env;
-- /tmp/.csqtt-upload-overrides.json.
+- AdGuard credentials;
+- API keys;
+- secret contents of `/etc/csqtt`;
+- temporary secret env/override files.
 
-Используйте личное защищённое хранилище для секретов.
+## Живой snapshot
 
-## Живой снимок сервера
+`export_safe_snapshot.sh` собирает безопасный диагностический снимок без содержимого секретных конфигов.
 
-Скрипт `export_safe_snapshot.sh` собирает диагностический снимок без содержимого секретных конфигов. Его можно запускать после значимых изменений и сохранять полученную папку отдельно или после ручной проверки добавлять в приватный GitHub-репозиторий.
+Такой snapshot полезно запускать после крупных изменений, но перед загрузкой в GitHub его нужно вручную проверить на отсутствие чувствительных данных.
+
+## Что GitHub backup НЕ содержит
+
+GitHub backup не заменяет резервную копию данных.
+
+Отдельно нужно сохранять:
+- PostgreSQL data;
+- важные Docker volumes/bind mounts;
+- пользовательские файлы/медиа;
+- секреты в защищённом хранилище;
+- при необходимости конфиги приложений после ручной очистки от секретов.
