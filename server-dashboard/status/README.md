@@ -79,23 +79,17 @@ Sanitized Docker endpoint вернул только состояния девя�
 
 ## Docker-backed internal services
 
-28.09.2026 подтверждены дополнительные health endpoints:
+28.09.2026 были подтверждены проверки WeightDiaryBot, Ollama и PostgreSQL.
+
+29.09.2026 активная архитектура WeightDiaryBot была упрощена: локальный ИИ/Ollama,
+PostgreSQL дневника и сам дневник удалены из активного стека. В status proxy оставлена
+только актуальная проверка Telegram-бота:
 
 ```text
-/health/docker-service/weightdiary -> ok: true
-/health/docker-service/ollama      -> ok: true
-/health/docker-service/postgres    -> ok: true
+/health/docker-service/weightdiary
 ```
 
-Исправлен порядок маршрутов: `/health/docker-service/*` должен обрабатываться раньше общего `/health/*`, иначе возвращается `unknown service`.
-
-Проверенный результат:
-
-```json
-{"service":"weightdiary","ok":true}
-{"service":"ollama","ok":true}
-{"service":"postgres","ok":true}
-```
+Исторические Ollama/PostgreSQL endpoints больше не являются частью текущего dashboard.
 
 
 ## Host TCP checks
@@ -124,7 +118,7 @@ XRDP  192.168.1.73:3389  -> ok: true
 Работают:
 - HTTP/HTTPS: AdGuard, VPNSL, Keenetic, Jellyfin, Transmission, Fuel, Homer, Glances;
 - Docker: общее число контейнеров;
-- Docker-backed: WeightDiaryBot, Ollama, PostgreSQL;
+- Docker-backed: WeightDiaryBot;
 - TCP: SSH, Samba, XRDP.
 
 Systemd helper и endpoints `/health/systemd/*` в финальный вариант не входят и не установлены.
@@ -137,3 +131,16 @@ Systemd helper и endpoints `/health/systemd/*` в финальный вариа
 ```
 
 Наружу через роутеры эти порты не пробрасывать.
+
+
+## Обновление scope — 29.09.2026
+
+После удаления локального ИИ и дневника из WeightDiaryBot панель приведена в соответствие:
+
+- карточка Ollama удалена;
+- карточка PostgreSQL 17 удалена;
+- карточка WeightDiaryBot оставлена и описывает текущие функции: топливо, сервер, климат;
+- status proxy больше не отслеживает контейнеры `weightdiarybot-ollama-1` и `weightdiarybot-db-1`;
+- общий Docker counter продолжает показывать все реально существующие контейнеры.
+
+До обновления живого сервера этот GitHub checkpoint описывает целевую конфигурацию.

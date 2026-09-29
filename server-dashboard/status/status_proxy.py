@@ -100,8 +100,6 @@ def docker_service_states():
     data = docker_raw_containers()
     expected = {
         "weightdiary": "weightdiarybot-bot-1",
-        "ollama": "weightdiarybot-ollama-1",
-        "postgres": "weightdiarybot-db-1",
     }
     states = {}
     for item in data:

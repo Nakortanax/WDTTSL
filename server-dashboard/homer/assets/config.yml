@@ -141,7 +141,7 @@ services:
       - name: "WeightDiaryBot"
         type: "Ping"
         icon: "fab fa-telegram"
-        subtitle: "Дневник · ИИ · сервер"
+        subtitle: "Топливо · сервер · климат"
         endpoint: "http://192.168.1.73:8090/health/docker-service/weightdiary"
         method: "get"
         timeout: 3000
@@ -149,26 +149,6 @@ services:
         tagstyle: "is-info"
         url: "https://github.com/Nakortanax/WeightDiaryBot"
         target: "_blank"
-
-      - name: "Ollama"
-        type: "Ping"
-        icon: "fas fa-robot"
-        subtitle: "Локальный ИИ · internal :11434"
-        endpoint: "http://192.168.1.73:8090/health/docker-service/ollama"
-        method: "get"
-        timeout: 3000
-        tag: "INTERNAL"
-        tagstyle: "is-warning"
-
-      - name: "PostgreSQL 17"
-        type: "Ping"
-        icon: "fas fa-database"
-        subtitle: "База WeightDiaryBot · internal :5432"
-        endpoint: "http://192.168.1.73:8090/health/docker-service/postgres"
-        method: "get"
-        timeout: 3000
-        tag: "INTERNAL"
-        tagstyle: "is-warning"
 
   - name: "Управление сервером"
     icon: "fas fa-screwdriver-wrench"
