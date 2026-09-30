@@ -96,9 +96,18 @@ sudo docker compose stop
 Не использовать `docker compose down -v`.
 
 
-## Актуализация — 29.09.2026
+## Актуализация — 29–30.09.2026
 
 После упрощения WeightDiaryBot из панели удалены отдельные карточки Ollama и PostgreSQL 17.
 Локальный ИИ и дневник больше не входят в активную архитектуру Telegram-бота.
 
 Текущий раздел «Наши приложения» содержит Fuel service и WeightDiaryBot.
+
+30.09.2026 конфигурация из ветки `home-dashboard-homer` применена на живом сервере.
+Подтверждено:
+- контейнер `homer` healthy и отвечает HTTP 200 на `:8088`;
+- `homer-status` работает на `:8090`;
+- `/health/docker-service/weightdiary` возвращает HTTP 200 и `ok: true`;
+- старые endpoints `/health/docker-service/ollama` и `/health/docker-service/postgres`
+  возвращают HTTP 404 `unknown docker service`;
+- live `config.yml` больше не содержит карточки Ollama и PostgreSQL.
