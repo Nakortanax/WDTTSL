@@ -416,3 +416,21 @@ Docker images: ~4.742GB
 
 Следующий шаг: применить подготовленный `home-dashboard-homer` на live Homer/status proxy и проверить,
 что карточки Ollama/PostgreSQL исчезли, а WeightDiaryBot остаётся online.
+
+
+## Homer live deployment completed — 30.09.2026
+
+Подготовленная конфигурация ветки `home-dashboard-homer` применена на живом сервере.
+
+Подтверждено:
+- `homer` перезапущен и healthy;
+- `homer-status` перезапущен;
+- Homer отвечает HTTP 200 на `192.168.1.73:8088`;
+- status proxy: `weightdiary -> HTTP 200 / ok:true`;
+- status proxy: `ollama -> HTTP 404 / unknown docker service`;
+- status proxy: `postgres -> HTTP 404 / unknown docker service`;
+- live Homer config больше не содержит карточки Ollama/PostgreSQL;
+- backup старой live-конфигурации создан в `/opt/dashboard-backup-20260930-053239`.
+
+Таким образом live dashboard теперь соответствует активной архитектуре WeightDiaryBot:
+только fuel + bot, без Ollama и PostgreSQL-контейнеров.
