@@ -434,3 +434,23 @@ Docker images: ~4.742GB
 
 Таким образом live dashboard теперь соответствует активной архитектуре WeightDiaryBot:
 только fuel + bot, без Ollama и PostgreSQL-контейнеров.
+
+
+## Final recovery checkpoint — 30.09.2026
+
+После успешного live cleanup создан, проверен и отправлен в GitHub свежий encrypted recovery backup
+активной архитектуры без Ollama и дневника.
+
+```text
+WeightDiaryBot main: 1f4acd1
+Commit: Refresh recovery backup after AI removal
+```
+
+Подтверждено:
+- backup verification: SHA-256 OK;
+- decrypt OK;
+- active backup content OK;
+- HEAD и origin/main совпадают;
+- git working tree после push чистый.
+
+Это текущая финальная recovery-точка для активного WeightDiaryBot.
