@@ -205,3 +205,32 @@ One remaining Stage 2 check before declaring shared-history behavior fully verif
 send a normal (non-command) message in Telegram and confirm that the message and model reply appear in the Web UI history.
 
 Do not enable host filesystem, shell, Docker socket or administrative execution until the shared-history check is complete.
+
+
+## Shared history verified + empty-reply fix — 2026-10-05
+
+Verified: a normal Telegram message appears in the Web UI with source `telegram`, so Telegram -> shared SQLite -> Web synchronization works.
+
+Observed issue: the corresponding assistant row could be empty. Qwen 3.5 is a thinking-capable model and Ollama separates reasoning from the final `message.content`. The agent must not expose or persist the reasoning trace as a substitute for the final answer.
+
+Fix:
+- added `QWEN_THINK=false` default;
+- chat requests now explicitly send `"think": false`;
+- if Ollama still returns an empty final `message.content`, the agent stores a clear diagnostic message instead of a blank assistant bubble.
+
+Set in local `.env`:
+
+```text
+QWEN_THINK=false
+```
+
+Then rebuild only the agent container:
+
+```bash
+cd ~/WDTTSL
+git pull --ff-only
+cd server-ai
+docker compose up -d --build agent
+```
+
+After rebuild, repeat one normal Telegram message and confirm that both the message and a non-empty assistant reply appear in Web UI.
