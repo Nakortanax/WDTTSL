@@ -616,3 +616,22 @@ Fix prepared:
 - generic tool-result clipping now includes its suffix inside `AGENT_TOOL_RESULT_CHARS`.
 
 Expected live trace after rollout: one `[WEB] tool=web_research ...` call, followed by a normal structured answer and automatic `Источники:` section, with no `server_health` in that request.
+
+
+## Explicit WEB precedence and deterministic search enforcement — 2026-10-05
+
+A second live Telegram test still showed two `web_research` calls followed by READ fallback and `server_health`, while Qwen remained on `100% GPU`.
+
+The overlapping-intent cause is now fixed at application level:
+- explicit WEB intent takes precedence over overlapping READ keywords such as `Docker`, `server` or `NVIDIA`;
+- for explicit internet/current-information requests, the application itself executes exactly one fresh `web_research` call before model synthesis;
+- that request is then switched to synthesis-only mode with no tools exposed on the next model turn;
+- READ enforcement is disabled for that explicit WEB request, so it cannot fall through to `server_health`;
+- final answers still receive automatic source URLs gathered from the current WEB result.
+
+Expected trace for the same Telegram test after rollout:
+```text
+[WEB] selected=web_research reason=explicit_web_request
+[WEB] tool=web_research elapsed=... result_chars=...
+```
+There should be no second `web_research`, no `[READ] rejected_stale_answer`, and no `server_health`.
