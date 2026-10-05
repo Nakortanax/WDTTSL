@@ -653,3 +653,26 @@ Quality improvements prepared:
 - Telegram reply chunking now prefers newline/word boundaries so source URLs are less likely to be split between messages.
 
 This quality pass is not yet marked verified. Re-run the same NVIDIA Container Toolkit / Docker CDI research request and check that primary sources dominate the final source list and that unsupported absence claims are gone.
+
+
+## Stage 4 WEB orchestration VERIFIED; source extraction still being improved — 2026-10-05
+
+The latest live Telegram test verified the control-flow portion of Stage 4:
+- explicit internet intent planned 3 focused queries;
+- exactly one deterministic `web_research` call executed;
+- no READ fallback or `server_health` call occurred;
+- the result stayed under the configured tool-result budget;
+- Qwen stayed on `100% GPU`;
+- the final answer was synthesized and automatic source URLs were appended.
+
+Remaining quality issue observed live:
+- primary sources were selected correctly (NVIDIA release notes, NVIDIA CDI docs, NVIDIA GitHub releases), but generic HTML extraction often returned navigation/insufficient page text;
+- the answer therefore remained appropriately cautious but could not extract enough current release detail.
+
+Prepared extraction improvements:
+- documentation HTML now prefers `article`/`main`/documentation body containers instead of whole-page navigation;
+- long documents are focused around terms from the planned research queries;
+- GitHub `/releases` pages now use the public GitHub Releases API internally and return recent tag names, publication timestamps and release-note excerpts;
+- fetched evidence remains bounded and SSRF/public-network validation remains in force.
+
+Stage 4 should be marked fully VERIFIED only after a live retest shows both correct one-call orchestration and useful current facts extracted from primary sources.
