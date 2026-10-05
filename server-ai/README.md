@@ -676,3 +676,19 @@ Prepared extraction improvements:
 - fetched evidence remains bounded and SSRF/public-network validation remains in force.
 
 Stage 4 should be marked fully VERIFIED only after a live retest shows both correct one-call orchestration and useful current facts extracted from primary sources.
+
+
+## Primary-source extraction verified live — 2026-10-05
+
+The source-extraction pass was verified directly inside the live agent container.
+
+Verified:
+- NVIDIA Container Toolkit release notes are now parsed from the document body instead of mostly navigation;
+- the current official release-notes page exposed NVIDIA Container Toolkit 1.20.1 and 1.20.0, including package/container version details and a 1.20.0 change note;
+- GitHub `NVIDIA/nvidia-container-toolkit/releases` is now handled through the public Releases API and returned recent unified-release notes including 1.20.1, 1.20.0 and 1.19.1 data;
+- the direct fetch tests returned `ok: True`;
+- Qwen remained on `100% GPU` after the rebuild.
+
+No autonomous WEB trace was expected from this direct `execute_web_tool("web_fetch", ...)` smoke test because it bypasses the chat/tool orchestration layer.
+
+Final Stage 4 verification still requires repeating the same Telegram research request and confirming the synthesized answer now uses these extracted current primary-source facts while retaining the one-call WEB trace.
