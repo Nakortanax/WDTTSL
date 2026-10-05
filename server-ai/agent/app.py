@@ -239,29 +239,30 @@ def _tool_label(name: str, arguments: dict) -> str:
     return name
 
 
-def _collect_web_sources(result: dict) -> list[tuple[str, str]]:
+def _collect_web_sources(result: dict) -> list[tuple[str, str, str]]:
     root = result.get("result") if isinstance(result, dict) else None
     if not isinstance(root, dict):
         return []
 
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, str]] = []
 
     def add_item(item: dict) -> None:
         url = str(item.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return
+        source_id = str(item.get("source_id") or "").strip() or f"S{len(found) + 1}"
         title = str(item.get("title") or url).strip() or url
-        if all(existing_url != url for _, existing_url in found):
-            found.append((title[:140], url))
+        if all(existing_url != url for _, _, existing_url in found):
+            found.append((source_id, title[:140], url))
 
-    if root.get("url"):
-        add_item(root)
-    for key in ("results", "documents"):
+    for key in ("documents", "results"):
         values = root.get(key)
         if isinstance(values, list):
             for item in values:
                 if isinstance(item, dict):
                     add_item(item)
+    if root.get("url"):
+        add_item(root)
     return found[:8]
 
 
@@ -418,7 +419,7 @@ async def ask_model(user_text: str, source: str) -> str:
             {"role": "user", "content": text},
         ]
         tool_trace: list[str] = []
-        web_sources: list[tuple[str, str]] = []
+        web_sources: list[tuple[str, str, str]] = []
         grounded_mode = False
         read_used = False
         web_used = False
