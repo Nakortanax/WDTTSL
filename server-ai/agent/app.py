@@ -94,7 +94,11 @@ STRICT_GROUNDING_PROMPT = (
       "WEB-источники имеют идентификаторы S1, S2 и т.д. Каждый проверяемый факт в итоговом WEB-ответе должен содержать "
       "идентификатор поддерживающего источника в квадратных скобках, например [S1]. Не приписывай одному источнику факт, "
       "которого нет в его excerpt/text. Search snippet — слабое свидетельство: подробные технические утверждения делай "
-      "прежде всего по документам, где есть извлечённый text. Если факт нельзя привязать к конкретному S#, опусти его."
+      "прежде всего по документам, где есть извлечённый text. Search-only результаты без text не используй для "
+      "технических фактов. Если факт нельзя привязать к конкретному S# с извлечённым text, опусти его. "
+      "Технические ярлыки и версии переноси точно: например, bugfix release не превращай в beta release, а v1.12.0 "
+      "не сокращай до 12.0. Не объединяй факты из разных продуктов NVIDIA или разных подсистем Docker, если источник "
+      "явно не связывает их с темой запроса."
 )
 
 security = HTTPBasic(auto_error=False)
@@ -255,13 +259,20 @@ def _collect_web_sources(result: dict) -> list[tuple[str, str, str]]:
         if all(existing_url != url for _, _, existing_url in found):
             found.append((source_id, title[:140], url))
 
-    for key in ("documents", "results"):
-        values = root.get(key)
-        if isinstance(values, list):
-            for item in values:
+    documents = root.get("documents")
+    if isinstance(documents, list):
+        for item in documents:
+            if isinstance(item, dict) and item.get("text"):
+                add_item(item)
+
+    if not found:
+        results = root.get("results")
+        if isinstance(results, list):
+            for item in results:
                 if isinstance(item, dict):
                     add_item(item)
-    if root.get("url"):
+
+    if root.get("url") and not found:
         add_item(root)
     return found[:8]
 
@@ -271,25 +282,24 @@ def _compact_tool_content(result: dict) -> str:
     if len(raw) <= TOOL_RESULT_CHARS:
         return raw
 
-    # Keep tool content valid JSON even when evidence must be reduced.
     try:
         compact = json.loads(raw)
         root = compact.get("result") if isinstance(compact, dict) else None
         if isinstance(root, dict):
             documents = root.get("documents")
             if isinstance(documents, list):
-                root["documents"] = documents[:2]
+                root["documents"] = documents[:4]
                 for item in root["documents"]:
                     if isinstance(item, dict) and isinstance(item.get("text"), str):
-                        item["text"] = item["text"][:350]
+                        item["text"] = item["text"][:500]
 
             results = root.get("results")
             if isinstance(results, list):
-                root["results"] = results[:5]
+                root["results"] = results[:4]
                 for item in root["results"]:
                     if isinstance(item, dict):
                         if isinstance(item.get("snippet"), str):
-                            item["snippet"] = item["snippet"][:90]
+                            item["snippet"] = item["snippet"][:70]
                         item.pop("matched_query", None)
 
             raw = json.dumps(compact, ensure_ascii=False)
@@ -297,9 +307,14 @@ def _compact_tool_content(result: dict) -> str:
                 return raw
 
             if isinstance(root.get("documents"), list):
-                root["documents"] = root["documents"][:1]
+                for item in root["documents"]:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        item["text"] = item["text"][:330]
             if isinstance(root.get("results"), list):
-                root["results"] = root["results"][:4]
+                root["results"] = root["results"][:3]
+                for item in root["results"]:
+                    if isinstance(item, dict) and isinstance(item.get("snippet"), str):
+                        item["snippet"] = item["snippet"][:45]
             root["evidence_compacted"] = True
             raw = json.dumps(compact, ensure_ascii=False)
             if len(raw) <= TOOL_RESULT_CHARS:
@@ -307,14 +322,17 @@ def _compact_tool_content(result: dict) -> str:
     except Exception:
         pass
 
-    preview_limit = max(200, TOOL_RESULT_CHARS - 120)
-    fallback = {
-        "ok": bool(result.get("ok")) if isinstance(result, dict) else False,
-        "evidence_compacted": True,
-        "preview": raw[:preview_limit],
-    }
-    encoded = json.dumps(fallback, ensure_ascii=False)
-    return encoded[:TOOL_RESULT_CHARS]
+    preview = raw
+    while True:
+        fallback = {
+            "ok": bool(result.get("ok")) if isinstance(result, dict) else False,
+            "evidence_compacted": True,
+            "preview": preview,
+        }
+        encoded = json.dumps(fallback, ensure_ascii=False)
+        if len(encoded) <= TOOL_RESULT_CHARS or len(preview) <= 200:
+            return encoded
+        preview = preview[: max(200, len(preview) - 250)]
 
 
 def _normalize_tool_arguments(value) -> dict:
@@ -389,7 +407,7 @@ async def _plan_web_queries(client: httpx.AsyncClient, text: str) -> list[str]:
         planned: list[str] = []
         if isinstance(raw_queries, list):
             for value in raw_queries:
-                query = re.sub(r"\\s+", " ", str(value or "")).strip()
+                query = re.sub(r"\s+", " ", str(value or "")).strip()
                 if not query:
                     continue
                 if len(query) > 220:
@@ -458,7 +476,7 @@ async def ask_model(user_text: str, source: str) -> str:
                     arguments = {
                         "queries": planned_queries,
                         "max_results": 6,
-                        "fetch_top": 3,
+                        "fetch_top": 4,
                         "language": "all",
                     }
                     started = time.monotonic()
