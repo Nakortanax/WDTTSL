@@ -718,3 +718,30 @@ Hardening added:
 - the final automatic source list now includes the same `[S#]` IDs, making claim-to-source checking straightforward.
 
 Next live test: repeat the same NVIDIA Container Toolkit / Docker CDI request and confirm that factual bullets include matching `[S#]` markers and that unsupported mixed-source claims disappear.
+
+
+## WEB factual-accuracy hardening after live cited test — 2026-10-05
+
+The first live source-ID test confirmed that WEB orchestration and citation plumbing work:
+- query planning completed;
+- one `web_research` call ran;
+- no READ fallback occurred;
+- final answer contained `[S#]` citations and automatic matching source entries;
+- Qwen remained on `100% GPU`.
+
+However, source IDs alone were not sufficient to guarantee factual entailment. The live answer still contained examples of source mixing or imprecise technical transcription:
+- `bugfix release` was rendered as `beta release`;
+- NVIDIA Toolkit `v1.12.0` was rendered as `12.0`;
+- an NVIDIA AI Enterprise release-note result entered a Container Toolkit/CDI answer despite weak topical relevance.
+
+Hardening prepared:
+- search results are now scored for topical overlap with the planned queries in addition to source authority;
+- weakly related results that match only a vendor name are filtered when enough strongly relevant results exist;
+- `/latest/` documentation is preferred over version-pinned pages for current-information requests;
+- up to four evidence pages can be fetched, with at most two from the same host, allowing both current NVIDIA release notes and current NVIDIA CDI docs to coexist with Docker/GitHub evidence;
+- final source IDs are now drawn from successfully fetched documents with `text`; search-only snippets are not treated as factual evidence when fetched documents exist;
+- tool-result compaction preserves up to four fetched evidence documents while remaining valid JSON;
+- the synthesis prompt explicitly preserves exact technical labels/versions and forbids cross-product source mixing;
+- a second evidence-only verifier pass now checks the draft against `documents[].text`, removes unsupported claims, preserves exact versions/status labels, and keeps only valid `[S#]` citations.
+
+This accuracy pass is committed but not yet live-verified. Repeat the same NVIDIA Container Toolkit / CDI request after rebuilding the agent. Expected: no unrelated AI Enterprise source, exact `v1.12.0` when supported, no `beta` substitution for `bugfix`, and a `[WEB] verification_pass result=accepted ...` log line.
