@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import json
 import os
 import sqlite3
 from contextlib import asynccontextmanager
@@ -12,6 +13,8 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
+from read_tools import TOOL_SCHEMAS, execute_tool
+
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
 MODEL = os.getenv("QWEN_MODEL", "qwen3.5:4b-q4_K_M")
@@ -21,15 +24,27 @@ WEB_PASSWORD = os.getenv("AGENT_WEB_PASSWORD", "")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 HISTORY_MESSAGES = max(4, int(os.getenv("AGENT_HISTORY_MESSAGES", "24")))
 QWEN_THINK = os.getenv("QWEN_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}
+READ_TOOLS_ENABLED = os.getenv("AGENT_READ_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
+MAX_TOOL_ROUNDS = 6
 
 SYSTEM_PROMPT = os.getenv(
     "AGENT_SYSTEM_PROMPT",
     (
         "Ты Server AI Agent — локальная модель Qwen, запущенная на домашнем Ubuntu-сервере пользователя. "
         "Не утверждай, что работаешь в облаке. Отвечай по-русски, если пользователь не попросил иначе. "
-        "Будь точным и не выдумывай результаты проверок. На текущем этапе у тебя есть только диалог и общая "
-        "история сообщений; системные инструменты, файловый доступ, shell, Git и интернет-поиск будут подключены "
-        "отдельно. Если задача требует ещё не подключённого инструмента, прямо скажи об этом."
+        "Будь точным и не выдумывай результаты проверок. "
+        + (
+            "У тебя включён READ-режим: ты можешь самостоятельно использовать доступные инструменты для чтения "
+            "файлов, поиска по разрешённым каталогам, просмотра systemd/journal, Docker, сети, дисков, GPU, "
+            "процессов и Git-статуса. Используй инструменты, когда вопрос требует фактической проверки сервера. "
+            "Никогда не проси пользователя вручную выполнить диагностическую команду, если нужные данные можно "
+            "получить READ-инструментом. Не пытайся раскрывать пароли, токены, приватные ключи или другие секреты. "
+            "READ-режим не умеет менять файлы, перезапускать службы, выполнять произвольный shell или админ-действия. "
+            "Если просят что-то изменить, сначала проведи доступную диагностику и объясни, что запись/ADMIN ещё не включены."
+            if READ_TOOLS_ENABLED
+            else
+            "READ-инструменты сейчас отключены. Файловый доступ, shell, Git и серверная диагностика недоступны."
+        )
     ),
 )
 
@@ -130,6 +145,18 @@ def require_auth(
     return credentials.username
 
 
+def _normalize_tool_arguments(value) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("Tool arguments must be an object")
+
+
 async def ask_model(user_text: str, source: str) -> str:
     text = user_text.strip()
     if not text:
@@ -138,24 +165,55 @@ async def ask_model(user_text: str, source: str) -> str:
     async with model_lock:
         add_message("user", text, source)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *model_history()]
-        payload = {
-            "model": MODEL,
-            "messages": messages,
-            "stream": False,
-            "think": QWEN_THINK,
-            "keep_alive": "10m",
-        }
+        answer = ""
 
         try:
             async with httpx.AsyncClient(timeout=240.0) as client:
-                response = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
-                response.raise_for_status()
-                data = response.json()
-                answer = data["message"]["content"].strip()
+                for _ in range(MAX_TOOL_ROUNDS):
+                    payload = {
+                        "model": MODEL,
+                        "messages": messages,
+                        "stream": False,
+                        "think": QWEN_THINK,
+                        "keep_alive": "10m",
+                    }
+                    if READ_TOOLS_ENABLED:
+                        payload["tools"] = TOOL_SCHEMAS
+
+                    response = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    message = data.get("message") or {}
+                    tool_calls = message.get("tool_calls") or []
+
+                    if not tool_calls:
+                        answer = str(message.get("content") or "").strip()
+                        break
+
+                    messages.append(message)
+                    for call in tool_calls:
+                        function = call.get("function") or {}
+                        name = str(function.get("name") or "")
+                        try:
+                            arguments = _normalize_tool_arguments(function.get("arguments"))
+                            result = await asyncio.to_thread(execute_tool, name, arguments)
+                        except Exception as exc:
+                            result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_name": name,
+                                "content": json.dumps(result, ensure_ascii=False),
+                            }
+                        )
+                else:
+                    answer = "Достигнут лимит READ-вызовов за один запрос. Уточни задачу или сузь область проверки."
+
                 if not answer:
-                    answer = "Модель вернула пустой итоговый ответ. Повтори запрос или проверь настройки thinking."
+                    answer = "Модель вернула пустой итоговый ответ после READ-проверки. Повтори запрос или уточни задачу."
         except Exception as exc:
-            answer = f"Ошибка обращения к локальной модели: {type(exc).__name__}: {exc}"
+            answer = f"Ошибка обращения к локальной модели/READ-инструментам: {type(exc).__name__}: {exc}"
 
         add_message("assistant", answer, "agent")
         return answer
@@ -235,7 +293,8 @@ async def telegram_loop() -> None:
                     continue
                 if text == "/status":
                     state = "OK" if await ollama_ok() else "ERROR"
-                    await telegram_send(chat_id, f"Ollama: {state}\nМодель: {MODEL}")
+                    tools_state = "ON" if READ_TOOLS_ENABLED and Path("/run/server-ai/read.sock").exists() else "OFF"
+                    await telegram_send(chat_id, f"Ollama: {state}\nМодель: {MODEL}\nREAD tools: {tools_state}")
                     continue
                 if text == "/new":
                     clear_messages()
@@ -278,6 +337,7 @@ async def health() -> dict:
         "ollama": await ollama_ok(),
         "model": MODEL,
         "telegram": bool(TELEGRAM_TOKEN),
+        "read_tools": READ_TOOLS_ENABLED and Path("/run/server-ai/read.sock").exists(),
     }
 
 
