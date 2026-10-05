@@ -584,3 +584,16 @@ Live verification checklist before marking Stage 4 verified:
 6. confirm agent logs contain `[WEB] tool=...`;
 7. confirm the answer contains structured facts and an automatic `Источники:` section;
 8. test that `web_fetch` refuses a private URL such as `http://127.0.0.1/`.
+
+
+## Stage 4 WEB smoke test verified — 2026-10-05
+
+Live server verification passed for the new web-research substrate:
+- SearXNG container started and reached `healthy`;
+- agent `/health` reports `web_tools:true` and `searxng:true`;
+- direct `web_search` returned real public results from NVIDIA documentation, NVIDIA GitHub releases, and Docker documentation;
+- SSRF protection correctly rejected `http://127.0.0.1/` with a private-address permission error.
+
+The Ollama process list was empty during this check because no model was loaded at that instant; this is not a GPU failure by itself.
+
+Stage 4 is not yet fully verified until Telegram/Web chat performs an autonomous WEB tool call, returns a grounded structured answer, and appends the automatic `Источники:` section.
