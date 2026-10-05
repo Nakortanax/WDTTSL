@@ -802,3 +802,40 @@ or
 ```
 
 In both failure cases, unsupported prose must no longer be returned to Telegram/Web.
+
+
+## Stage 4 WEB research VERIFIED — 2026-10-05
+
+Final live verification passed after the fail-closed grounding changes.
+
+Observed live:
+- the planner produced 3 focused search queries;
+- exactly one deterministic `web_research` call executed;
+- the evidence payload stayed within the configured tool-result budget (`2360` chars in this run);
+- no READ fallback occurred;
+- the evidence-only verifier returned `verification_pass result=accepted`;
+- accepted citations were limited to fetched evidence sources (`S1`, `S2`, `S3`);
+- the final Telegram answer used matching `[S#]` citations and an automatic source list;
+- exact version transcription was preserved for `v1.12.0`;
+- unsupported broad absence claims were softened to “в проверенных источниках не удалось подтвердить…”;
+- Qwen remained on `100% GPU` with context `8192`;
+- the fail-closed path introduced earlier remains in place, so a future citation/verifier failure blocks the unchecked draft instead of returning it.
+
+Stage 4 is therefore considered VERIFIED for:
+- public internet search through private SearXNG;
+- focused multi-query research planning;
+- primary-source extraction;
+- source ranking and relevance filtering;
+- bounded evidence passed to the local model;
+- per-claim source IDs;
+- evidence-only verification;
+- fail-closed behavior on invalid grounding;
+- shared use through the existing Telegram/Web agent;
+- GPU-backed local inference.
+
+Known non-blocking quality limitations:
+- a 4B local model can still produce awkward wording or over-literal summaries from truncated excerpts;
+- deep research may require larger evidence budgets, targeted source adapters, or a larger local model;
+- this stage does not add arbitrary browser execution, shell access, or write/admin capabilities.
+
+Recommended next stage: controlled WORK capabilities for repository/file edits and tests, with allowlisted paths, Git branch/diff workflow, and explicit approval gates for destructive or administrative actions.
