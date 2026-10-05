@@ -465,3 +465,31 @@ Included in the checkpoint:
 Local secrets and machine-specific secret values remain intentionally excluded from GitHub (for example `server-ai/.env`, Telegram token, and web password).
 
 Current next step: verify the final grounded Telegram health response itself, then mark Stage 3 fully complete before enabling any WORK-mode write capabilities.
+
+
+## CDI GPU stabilization rollout — 2026-10-05
+
+The Ollama container lost NVIDIA access a second time while still showing the legacy Docker GPU device request. Live symptoms repeated exactly:
+- `ollama ps`: `100% CPU`;
+- `nvidia-smi` inside the existing Ollama container: `Failed to initialize NVML: Unknown Error`;
+- recreating only the Ollama container immediately restored NVIDIA/NVML access and Qwen returned to `100% GPU`.
+
+The host already has working NVIDIA CDI support:
+- `nvidia-ctk cdi list` reports `nvidia.com/gpu=0`, the GPU UUID, and `nvidia.com/gpu=all`;
+- `nvidia-cdi-refresh.path` is active;
+- the one-shot `nvidia-cdi-refresh.service` previously completed successfully.
+
+The Compose definition is therefore being migrated from legacy:
+
+```yaml
+gpus: all
+```
+
+to native CDI:
+
+```yaml
+devices:
+  - "nvidia.com/gpu=all"
+```
+
+This change is committed but must be verified live by recreating only the Ollama container, checking `nvidia-smi` and `ollama ps`, and then testing that GPU access survives `systemctl daemon-reload`. Do not mark the CDI migration verified until that resilience test passes.
