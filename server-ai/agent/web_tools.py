@@ -92,13 +92,79 @@ def _clean_html(html: str) -> tuple[str, str]:
     for tag in soup(["nav", "footer", "aside"]):
         tag.decompose()
 
-    text = soup.get_text("\n", strip=True)
+    # Prefer the actual document body. This avoids feeding the model
+    # thousands of characters of sidebars/navigation from documentation sites.
+    root = None
+    selectors = (
+        "article",
+        "main",
+        "[role='main']",
+        ".bd-article",
+        ".article",
+        ".document",
+        "#main-content",
+        "#content",
+    )
+    for selector in selectors:
+        candidate = soup.select_one(selector)
+        if candidate and len(candidate.get_text(" ", strip=True)) >= 200:
+            root = candidate
+            break
+    if root is None:
+        root = soup.body or soup
+
+    text = root.get_text("\n", strip=True)
     lines = []
+    seen: set[str] = set()
     for line in text.splitlines():
         line = SPACE_RE.sub(" ", line).strip()
-        if line:
-            lines.append(line)
+        if not line or line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
     return title, _clip(BLANKS_RE.sub("\n\n", "\n".join(lines)), MAX_PAGE_TEXT)
+
+
+def _focus_text(text: str, focus_query: str | None, max_chars: int) -> str:
+    if not focus_query or len(text) <= max_chars:
+        return _clip(text, max_chars)
+
+    terms = {
+        token.casefold()
+        for token in re.findall(r"[A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9.+#_-]{2,}", focus_query)
+        if token.casefold() not in {
+            "the", "and", "for", "with", "latest", "current", "find", "search",
+            "найди", "поищи", "актуальную", "информацию", "последних", "изменениях",
+            "поддержке", "сравни", "источников", "краткий", "отчет", "отчёт",
+        }
+    }
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    if not terms or not paragraphs:
+        return _clip(text, max_chars)
+
+    scored = []
+    for index, paragraph in enumerate(paragraphs):
+        low = paragraph.casefold()
+        score = sum(2 for term in terms if term in low)
+        if re.search(r"\bv?\d+\.\d+(?:\.\d+)?\b", paragraph):
+            score += 1
+        if any(word in low for word in ("release", "cdi", "container device interface", "docker")):
+            score += 1
+        scored.append((score, index, paragraph))
+
+    best = sorted(scored, key=lambda item: (-item[0], item[1]))[:8]
+    best_indexes = sorted(index for score, index, _ in best if score > 0)
+    if not best_indexes:
+        return _clip(text, max_chars)
+
+    chosen: list[str] = []
+    used: set[int] = set()
+    for index in best_indexes:
+        for pos in (index - 1, index, index + 1):
+            if 0 <= pos < len(paragraphs) and pos not in used:
+                used.add(pos)
+                chosen.append(paragraphs[pos])
+    return _clip("\n".join(chosen), max_chars)
 
 
 def web_search(
@@ -163,9 +229,76 @@ def web_search(
     }
 
 
-def web_fetch(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
+
+def _github_releases_target(url: str) -> tuple[str, str, str] | None:
+    parsed = urlparse(url)
+    if (parsed.hostname or "").casefold() != "github.com":
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 3 and parts[2].casefold() == "releases":
+        return parts[0], parts[1], f"https://github.com/{parts[0]}/{parts[1]}/releases"
+    return None
+
+
+def _fetch_github_releases(url: str, max_chars: int, focus_query: str | None) -> dict[str, Any] | None:
+    target = _github_releases_target(url)
+    if target is None:
+        return None
+
+    owner, repo, canonical = target
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases?per_page=5"
+    _validate_public_url(api_url)
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/vnd.github+json",
+    }
+    with httpx.Client(timeout=FETCH_TIMEOUT, headers=headers) as client:
+        response = client.get(api_url)
+        response.raise_for_status()
+        payload = response.json()
+
+    if not isinstance(payload, list):
+        raise ValueError("Unexpected GitHub releases API response")
+
+    lines = []
+    for release in payload[:5]:
+        if not isinstance(release, dict):
+            continue
+        tag = str(release.get("tag_name") or "").strip()
+        name = str(release.get("name") or "").strip()
+        published = str(release.get("published_at") or "").strip()
+        body = str(release.get("body") or "").strip()
+        body = SPACE_RE.sub(" ", body.replace("\r", "\n")).strip()
+        if len(body) > 700:
+            body = body[:700].rsplit(" ", 1)[0] + "…"
+        lines.append(
+            "\n".join(
+                part
+                for part in (
+                    f"Release {tag}" if tag else "Release",
+                    f"Name: {name}" if name else "",
+                    f"Published: {published}" if published else "",
+                    f"Notes: {body}" if body else "",
+                )
+                if part
+            )
+        )
+
+    text = _focus_text("\n\n".join(lines), focus_query, max_chars)
+    return {
+        "url": canonical,
+        "title": f"Releases · {owner}/{repo} - GitHub",
+        "content_type": "application/vnd.github+json",
+        "text": text,
+    }
+
+def web_fetch(url: str, max_chars: int = MAX_PAGE_TEXT, focus_query: str | None = None) -> dict[str, Any]:
     current = _validate_public_url(url)
     max_chars = max(500, min(int(max_chars), MAX_PAGE_TEXT))
+
+    github_release = _fetch_github_releases(current, max_chars, focus_query)
+    if github_release is not None:
+        return github_release
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.1",
@@ -197,10 +330,10 @@ def web_fetch(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
                 body = bytes(raw).decode(encoding, errors="replace")
                 if content_type == "text/plain":
                     title = current
-                    text = _clip(body.strip(), max_chars)
+                    text = _focus_text(body.strip(), focus_query, max_chars)
                 else:
-                    title, text = _clean_html(body)
-                    text = _clip(text, max_chars)
+                    title, extracted = _clean_html(body)
+                    text = _focus_text(extracted, focus_query, max_chars)
 
                 return {
                     "url": str(response.url),
@@ -299,7 +432,11 @@ def web_research(
             continue
         used_hosts.add(host)
         try:
-            page = web_fetch(item["url"], max_chars=600)
+            page = web_fetch(
+                item["url"],
+                max_chars=850,
+                focus_query=" ".join(planned_queries),
+            )
             documents.append(
                 {
                     "title": page["title"],
@@ -411,6 +548,10 @@ WEB_TOOL_SCHEMAS = [
                 "properties": {
                     "url": {"type": "string"},
                     "max_chars": {"type": "integer", "minimum": 500, "maximum": 5000},
+                    "focus_query": {
+                        "type": "string",
+                        "description": "Optional topic to select the most relevant passages from a long page."
+                    },
                 },
                 "required": ["url"],
             },
