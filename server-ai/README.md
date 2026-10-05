@@ -597,3 +597,22 @@ Live server verification passed for the new web-research substrate:
 The Ollama process list was empty during this check because no model was loaded at that instant; this is not a GPU failure by itself.
 
 Stage 4 is not yet fully verified until Telegram/Web chat performs an autonomous WEB tool call, returns a grounded structured answer, and appends the automatic `Источники:` section.
+
+
+## Stage 4 autonomous WEB loop fix — prepared, awaiting live verification — 2026-10-05
+
+The first autonomous Telegram WEB test reached the tool-round limit instead of synthesizing a final answer. Live trace showed two consecutive `web_research` calls, and the final tool trace also contained an unrelated `server_health` call. Qwen stayed on `100% GPU`.
+
+Root cause in the agent loop:
+- explicit WEB requests still exposed both READ and WEB tools;
+- after a successful aggregate `web_research`, the model was allowed to call tools again;
+- clipped tool-result strings could exceed the configured character limit because the truncation suffix was appended after the full limit.
+
+Fix prepared:
+- explicit WEB requests expose only `web_research`;
+- after one successful `web_research`, the next turn has no tools and is forced to synthesize the final answer from that evidence;
+- explicit WEB requests can no longer wander into `server_health`;
+- web evidence is further bounded (up to 4 results, up to 2 fetched pages, smaller excerpts);
+- generic tool-result clipping now includes its suffix inside `AGENT_TOOL_RESULT_CHARS`.
+
+Expected live trace after rollout: one `[WEB] tool=web_research ...` call, followed by a normal structured answer and automatic `Источники:` section, with no `server_health` in that request.
