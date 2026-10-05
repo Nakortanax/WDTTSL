@@ -219,8 +219,8 @@ def web_research(
     language: str = "ru",
     time_range: str | None = None,
 ) -> dict[str, Any]:
-    max_results = max(2, min(int(max_results), 6))
-    fetch_top = max(0, min(int(fetch_top), 3))
+    max_results = max(2, min(int(max_results), 4))
+    fetch_top = max(0, min(int(fetch_top), 2))
     search = web_search(query, max_results=max_results, language=language, time_range=time_range)
 
     documents = []
@@ -233,7 +233,7 @@ def web_research(
             continue
         used_hosts.add(host)
         try:
-            page = web_fetch(item["url"], max_chars=700)
+            page = web_fetch(item["url"], max_chars=500)
             documents.append(
                 {
                     "id": item["id"],
@@ -257,7 +257,7 @@ def web_research(
             "id": item["id"],
             "title": _clip(item["title"], 160),
             "url": item["url"],
-            "snippet": _clip(item["snippet"], 180),
+            "snippet": _clip(item["snippet"], 140),
             "published": item.get("published"),
         }
         for item in search["results"]
@@ -296,8 +296,8 @@ WEB_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Focused web search query."},
-                    "max_results": {"type": "integer", "minimum": 2, "maximum": 6},
-                    "fetch_top": {"type": "integer", "minimum": 0, "maximum": 3},
+                    "max_results": {"type": "integer", "minimum": 2, "maximum": 4},
+                    "fetch_top": {"type": "integer", "minimum": 0, "maximum": 2},
                     "language": {"type": "string", "description": "Search language, normally ru or en."},
                     "time_range": {"type": "string", "enum": ["day", "month", "year"]},
                 },
