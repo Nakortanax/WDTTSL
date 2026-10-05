@@ -296,3 +296,25 @@ Verified immediately after recreation: `docker compose exec ollama nvidia-smi` s
 The READ broker installer was also changed so repeated code updates do not run `systemctl daemon-reload` unless the unit file itself changed. This reduces the chance of repeating the NVIDIA container/cgroup disruption during normal broker updates.
 
 The model GPU execution itself still requires a post-recreation inference check with `ollama ps` before marking full Qwen GPU operation restored.
+
+
+## Stage 3 autonomous READ call verified, synthesis accuracy issue — 2026-10-05
+
+The live agent successfully completed an autonomous READ-mode health request from Telegram after GPU recovery and READ-loop optimization.
+
+Confirmed operational path:
+- Telegram -> agent;
+- agent -> Qwen on GPU;
+- Qwen -> READ tools;
+- READ broker -> host diagnostics;
+- tool result -> Qwen;
+- Qwen -> Telegram final response.
+
+However, the first synthesized health report contained factual inconsistencies versus previously verified live diagnostics, including uptime and some container/storage details. Therefore Stage 3 plumbing is working, but factual grounding/synthesis is not yet considered production-safe.
+
+Next requirement before marking Stage 3 fully trusted:
+- make factual server reports strictly grounded in tool output;
+- prefer compact structured health tools;
+- expose/retain tool-call evidence for debugging;
+- avoid filling missing fields from model memory or guesses;
+- optionally include a short "checked data" section from tool results in diagnostic answers.
