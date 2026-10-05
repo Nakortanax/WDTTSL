@@ -13,6 +13,7 @@ SOCKET_PATH = os.getenv("SERVER_AI_READ_SOCKET", "/run/server-ai/read.sock")
 SOCKET_UID = int(os.getenv("SERVER_AI_SOCKET_UID", "1000"))
 SOCKET_GID = int(os.getenv("SERVER_AI_SOCKET_GID", "1000"))
 MAX_OUTPUT = 12000
+HEALTH_FS_SKIP_TYPES = {"overlay", "tmpfs", "efivarfs"}
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9@_.:-]{1,160}$")
 CONTAINER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,160}$")
@@ -245,14 +246,23 @@ def read_failed_units() -> list[dict[str, str]]:
 
 
 def server_health() -> dict[str, Any]:
+    filesystems = [
+        item
+        for item in read_filesystems()
+        if item.get("type") not in HEALTH_FS_SKIP_TYPES
+    ]
+    docker = read_docker_containers()
+    failed_systemd = read_failed_units()
     return {
         "ok": True,
         "result": {
             "uptime": read_uptime(),
             "memory": read_meminfo(),
-            "filesystems": read_filesystems(),
-            "docker": read_docker_containers(),
-            "failed_systemd": read_failed_units(),
+            "filesystems": filesystems,
+            "docker": docker,
+            "docker_count": len([item for item in docker if "name" in item]),
+            "failed_systemd": failed_systemd,
+            "failed_systemd_count": len([item for item in failed_systemd if "unit" in item]),
         },
     }
 
