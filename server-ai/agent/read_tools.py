@@ -280,7 +280,7 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return {"ok": True, "result": find_files(**arguments)}
         if name == "search_text":
             return {"ok": True, "result": search_text(**arguments)}
-        if name in {"server_snapshot", "systemd_status", "journal", "docker_logs", "git_status"}:
+        if name in {"server_health", "server_snapshot", "systemd_status", "journal", "docker_logs", "git_status"}:
             return host_call(name, arguments)
         return {"ok": False, "error": f"Unknown READ tool: {name}"}
     except Exception as exc:
@@ -288,6 +288,14 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "server_health",
+            "description": "Get one compact read-only health report with uptime, memory, filesystems, running Docker containers and failed systemd units. Prefer this for broad server health checks.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
     {
         "type": "function",
         "function": {
