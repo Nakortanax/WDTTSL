@@ -745,3 +745,21 @@ Hardening prepared:
 - a second evidence-only verifier pass now checks the draft against `documents[].text`, removes unsupported claims, preserves exact versions/status labels, and keeps only valid `[S#]` citations.
 
 This accuracy pass is committed but not yet live-verified. Repeat the same NVIDIA Container Toolkit / CDI request after rebuilding the agent. Expected: no unrelated AI Enterprise source, exact `v1.12.0` when supported, no `beta` substitution for `bugfix`, and a `[WEB] verification_pass result=accepted ...` log line.
+
+
+## Stage 4 WEB cited verification pass — live result — 2026-10-05
+
+The latest Telegram test verified the full WEB execution and verification pipeline live:
+- 2 focused search queries were planned;
+- exactly one deterministic `web_research` call executed;
+- no READ fallback occurred;
+- the evidence payload stayed within the configured tool-result budget;
+- the evidence-only verifier ran and logged `verification_pass result=accepted`;
+- the final answer used stable `[S#]` citations tied to the automatic source list;
+- unrelated NVIDIA AI Enterprise results were no longer present;
+- exact technical labels improved: `v1.12.0` was preserved and `v1.20.1` was described as a bugfix release;
+- Qwen remained on `100% GPU`.
+
+One residual wording issue remains before declaring factual synthesis fully trusted: the answer still said that v1.20.1 “does not contain new CDI changes compared with v1.12.0”. The checked evidence establishes that no such CDI changes were found in the fetched excerpts, but it does not prove their absolute absence. This should be phrased as “the checked sources did not confirm additional CDI changes”.
+
+Operationally, Stage 4 WEB search/orchestration/citation plumbing is verified. One final negative-claim wording hardening is pending for factual conservatism.
