@@ -342,3 +342,17 @@ Health now exposes:
 Telegram `/status` and the Web UI also display `Grounding: STRICT`.
 
 This rollout must be live-tested against the same server-health request and compared with direct READ broker output before Stage 3 is considered trusted.
+
+
+## Strict grounding status verified live — 2026-10-05
+
+Telegram `/status` was verified on the live server and reports:
+
+```text
+Ollama: OK
+Модель: qwen3.5:4b-q4_K_M
+READ tools: ON
+Grounding: STRICT
+```
+
+This confirms the updated agent build is running with READ mode and strict grounding enabled. Final Stage 3 trust verification still requires comparing a grounded health response against the direct `server_health` broker output.
