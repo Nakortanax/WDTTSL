@@ -610,7 +610,30 @@ async def ask_model(user_text: str, source: str) -> str:
                             print("[WEB] rejected_unsearched_answer final=1", flush=True)
                             break
 
-                        answer = str(message.get("content") or "").strip()
+                        candidate = str(message.get("content") or "").strip()
+                        if require_web and web_sources:
+                            valid_ids = {source_id for source_id, _, _ in web_sources}
+                            cited_ids = set(re.findall(r"\[(S\d+)\]", candidate))
+                            bad_ids = cited_ids - valid_ids
+                            if (not cited_ids or bad_ids) and not retry_web_citations:
+                                retry_web_citations = True
+                                active_messages.append(
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "Перепиши итоговый WEB-ответ. Каждый проверяемый факт должен иметь "
+                                            "ссылку на существующий source_id вида [S1], [S2] из текущих WEB-данных. "
+                                            "Не используй несуществующие S#. Не добавляй факты, которые нельзя "
+                                            "подтвердить конкретным источником."
+                                        ),
+                                    }
+                                )
+                                print(
+                                    f"[WEB] citation_grounding_retry cited={sorted(cited_ids)} bad={sorted(bad_ids)}",
+                                    flush=True,
+                                )
+                                continue
+                        answer = candidate
                         break
 
                     if not grounded_mode:
