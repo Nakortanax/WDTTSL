@@ -261,7 +261,9 @@ def _compact_tool_content(result: dict) -> str:
     raw = json.dumps(result, ensure_ascii=False)
     if len(raw) <= TOOL_RESULT_CHARS:
         return raw
-    return raw[:TOOL_RESULT_CHARS] + f"...[truncated {len(raw) - TOOL_RESULT_CHARS} chars]"
+    suffix = f"...[truncated total={len(raw)} chars]"
+    keep = max(0, TOOL_RESULT_CHARS - len(suffix))
+    return raw[:keep] + suffix
 
 
 def _normalize_tool_arguments(value) -> dict:
@@ -300,10 +302,24 @@ async def ask_model(user_text: str, source: str) -> str:
         retry_web = False
 
         enabled_tools = []
-        if READ_TOOLS_ENABLED:
-            enabled_tools.extend(TOOL_SCHEMAS)
-        if WEB_TOOLS_ENABLED:
-            enabled_tools.extend(WEB_TOOL_SCHEMAS)
+        if require_web:
+            # For an explicit internet-research request, expose only the aggregate
+            # research tool. This prevents a small local model from wandering into
+            # unrelated READ tools or repeatedly chaining equivalent searches.
+            enabled_tools = [
+                schema
+                for schema in WEB_TOOL_SCHEMAS
+                if schema.get("function", {}).get("name") == "web_research"
+            ]
+        elif require_read:
+            enabled_tools = list(TOOL_SCHEMAS)
+        else:
+            if READ_TOOLS_ENABLED:
+                enabled_tools.extend(TOOL_SCHEMAS)
+            if WEB_TOOLS_ENABLED:
+                enabled_tools.extend(WEB_TOOL_SCHEMAS)
+
+        finalize_after_web = False
 
         try:
             async with httpx.AsyncClient(timeout=240.0) as client:
@@ -352,8 +368,9 @@ async def ask_model(user_text: str, source: str) -> str:
                         "think": QWEN_THINK,
                         "keep_alive": "10m",
                     }
-                    if enabled_tools:
-                        payload["tools"] = enabled_tools
+                    round_tools = [] if finalize_after_web else enabled_tools
+                    if round_tools:
+                        payload["tools"] = round_tools
 
                     response = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
                     response.raise_for_status()
@@ -426,6 +443,11 @@ async def ask_model(user_text: str, source: str) -> str:
                                     if item not in web_sources:
                                         web_sources.append(item)
                                 prefix = "[WEB]"
+                                if require_web and name == "web_research":
+                                    # One bounded web_research call already includes search
+                                    # plus selected page text. The next model turn must
+                                    # synthesize the answer instead of searching again.
+                                    finalize_after_web = True
                             else:
                                 print(f"[READ] tool={name} argument_keys={sorted(arguments.keys())}", flush=True)
                                 result = await asyncio.to_thread(execute_tool, name, arguments)
@@ -451,6 +473,18 @@ async def ask_model(user_text: str, source: str) -> str:
                                 "content": tool_content,
                             }
                         )
+                        if finalize_after_web and name == "web_research":
+                            grounded_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "Интернет-поиск для этого запроса уже выполнен. "
+                                        "Больше инструменты не вызывай. Сформируй итоговый ответ только по "
+                                        "полученным WEB-данным: краткий вывод, ключевые факты, затем "
+                                        "неопределённости/расхождения при наличии. Источники приложение добавит само."
+                                    ),
+                                }
+                            )
                 else:
                     answer = "Достигнут лимит вызовов инструментов за один запрос. Уточни задачу или сузь область поиска."
 
