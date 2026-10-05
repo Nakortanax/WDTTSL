@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import json
 import os
+import re
 import sqlite3
 import time
 from contextlib import asynccontextmanager
@@ -28,6 +29,10 @@ QWEN_THINK = os.getenv("QWEN_THINK", "false").strip().lower() in {"1", "true", "
 READ_TOOLS_ENABLED = os.getenv("AGENT_READ_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
 MAX_TOOL_ROUNDS = 4
 TOOL_RESULT_CHARS = max(1000, int(os.getenv("AGENT_TOOL_RESULT_CHARS", "3500")))
+
+READ_RESOURCE_RE = re.compile(r"(?i)(сервер|server|uptime|памят|\\bram\\b|диск|storage|docker|контейнер|systemd|journal|журнал|лог|\\blog\\b|gpu|nvidia|сеть|network|порт|процесс|git|репозитор|/(?:etc|var/log|home|opt|srv)(?:/|\\b))")
+READ_INTENT_RE = re.compile(r"(?i)(проверь|проверить|покажи|посмотри|узнай|статус|состояни|ошиб|сколько|какие|есть ли|прочитай|найди|проанализ|диагност)")
+HISTORY_ONLY_RE = re.compile(r"(?i)(в истории|истори[ия]\\s+чата|мы обсуждали|что обсуждали|помнишь|напомни)")
 
 SYSTEM_PROMPT = os.getenv(
     "AGENT_SYSTEM_PROMPT",
@@ -161,6 +166,25 @@ def require_auth(
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
+
+
+def _requires_read(text: str) -> bool:
+    if not READ_TOOLS_ENABLED:
+        return False
+    lowered = text.casefold()
+    if HISTORY_ONLY_RE.search(text):
+        return False
+    if "read-инстру" in lowered or "read tools" in lowered or "read tool" in lowered:
+        return True
+    return bool(READ_RESOURCE_RE.search(text) and READ_INTENT_RE.search(text))
+
+
+def _is_health_request(text: str) -> bool:
+    lowered = text.casefold()
+    if "состояние сервера" in lowered or "server health" in lowered:
+        return True
+    markers = ("uptime", "памят", "диск", "docker", "systemd")
+    return sum(1 for marker in markers if marker in lowered) >= 2
 
 
 def _tool_label(name: str, arguments: dict) -> str:
