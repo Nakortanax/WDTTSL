@@ -214,12 +214,12 @@ def web_fetch(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
 
 def web_research(
     query: str,
-    max_results: int = 5,
+    max_results: int = 4,
     fetch_top: int = 2,
     language: str = "ru",
     time_range: str | None = None,
 ) -> dict[str, Any]:
-    max_results = max(2, min(int(max_results), 8))
+    max_results = max(2, min(int(max_results), 6))
     fetch_top = max(0, min(int(fetch_top), 3))
     search = web_search(query, max_results=max_results, language=language, time_range=time_range)
 
@@ -233,7 +233,7 @@ def web_research(
             continue
         used_hosts.add(host)
         try:
-            page = web_fetch(item["url"], max_chars=1000)
+            page = web_fetch(item["url"], max_chars=700)
             documents.append(
                 {
                     "id": item["id"],
@@ -252,9 +252,19 @@ def web_research(
                 }
             )
 
+    compact_results = [
+        {
+            "id": item["id"],
+            "title": _clip(item["title"], 160),
+            "url": item["url"],
+            "snippet": _clip(item["snippet"], 180),
+            "published": item.get("published"),
+        }
+        for item in search["results"]
+    ]
     return {
         "query": query,
-        "results": search["results"],
+        "results": compact_results,
         "documents": documents,
     }
 
@@ -286,7 +296,7 @@ WEB_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Focused web search query."},
-                    "max_results": {"type": "integer", "minimum": 2, "maximum": 8},
+                    "max_results": {"type": "integer", "minimum": 2, "maximum": 6},
                     "fetch_top": {"type": "integer", "minimum": 0, "maximum": 3},
                     "language": {"type": "string", "description": "Search language, normally ru or en."},
                     "time_range": {"type": "string", "enum": ["day", "month", "year"]},
