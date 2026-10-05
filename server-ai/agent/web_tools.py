@@ -421,6 +421,7 @@ def web_research(
 
     merged.sort(key=lambda item: (-int(item.get("_score", 0)), int(item.get("id", 999))))
     selected = merged[:max_results]
+    source_ids = {item["url"]: f"S{index}" for index, item in enumerate(selected, start=1)}
 
     documents = []
     used_hosts: set[str] = set()
@@ -439,6 +440,7 @@ def web_research(
             )
             documents.append(
                 {
+                    "source_id": source_ids.get(item["url"]),
                     "title": page["title"],
                     "url": page["url"],
                     "text": page["text"],
@@ -447,6 +449,7 @@ def web_research(
         except Exception as exc:
             documents.append(
                 {
+                    "source_id": source_ids.get(item["url"]),
                     "title": item["title"],
                     "url": item["url"],
                     "error": f"{type(exc).__name__}: {exc}",
@@ -455,6 +458,7 @@ def web_research(
 
     compact_results = [
         {
+            "source_id": source_ids.get(item["url"]),
             "title": _clip(str(item["title"]), 150),
             "url": item["url"],
             "snippet": _clip(str(item.get("snippet") or ""), 130),
