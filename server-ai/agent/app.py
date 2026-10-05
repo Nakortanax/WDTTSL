@@ -239,9 +239,46 @@ async def ask_model(user_text: str, source: str) -> str:
         tool_trace: list[str] = []
         grounded_mode = False
         answer = ""
+        require_read = _requires_read(text)
+        retry_without_answer = False
 
         try:
             async with httpx.AsyncClient(timeout=240.0) as client:
+                if require_read and _is_health_request(text):
+                    arguments: dict = {}
+                    started = time.monotonic()
+                    print("[READ] selected=server_health reason=health_request", flush=True)
+                    result = await asyncio.to_thread(execute_tool, "server_health", arguments)
+                    elapsed = time.monotonic() - started
+                    tool_content = _compact_tool_content(result)
+                    tool_trace.append("server_health")
+                    grounded_mode = True
+                    grounded_messages.extend(
+                        [
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "server_health",
+                                            "arguments": arguments,
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "role": "tool",
+                                "tool_name": "server_health",
+                                "content": tool_content,
+                            },
+                        ]
+                    )
+                    print(
+                        f"[READ] tool=server_health elapsed={elapsed:.2f}s result_chars={len(tool_content)}",
+                        flush=True,
+                    )
+
                 for _ in range(MAX_TOOL_ROUNDS):
                     active_messages = grounded_messages if grounded_mode else messages
                     payload = {
@@ -261,12 +298,30 @@ async def ask_model(user_text: str, source: str) -> str:
                     tool_calls = message.get("tool_calls") or []
 
                     if not tool_calls:
+                        if require_read and not grounded_mode:
+                            if not retry_without_answer:
+                                retry_without_answer = True
+                                messages.append(
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "Для этого запроса нужна свежая READ-проверка. "
+                                            "Не отвечай из истории. Сначала вызови подходящий READ-инструмент."
+                                        ),
+                                    }
+                                )
+                                print("[READ] rejected_stale_answer retry=1", flush=True)
+                                continue
+                            answer = (
+                                "Свежая READ-проверка обязательна, но модель не вызвала инструмент. "
+                                "Ответ из истории заблокирован. Повтори запрос или уточни, что именно проверить."
+                            )
+                            print("[READ] rejected_stale_answer final=1", flush=True)
+                            break
+
                         answer = str(message.get("content") or "").strip()
                         break
 
-                    # As soon as a READ tool is used, drop old chat history from
-                    # the synthesis context. Only the current user request and
-                    # tool evidence from this turn remain authoritative.
                     if not grounded_mode:
                         grounded_mode = True
                     grounded_messages.append(message)
@@ -435,6 +490,7 @@ async def health() -> dict:
         "telegram": bool(TELEGRAM_TOKEN),
         "read_tools": READ_TOOLS_ENABLED and Path("/run/server-ai/read.sock").exists(),
         "strict_grounding": True,
+        "read_enforcement": True,
     }
 
 
