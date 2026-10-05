@@ -493,3 +493,19 @@ devices:
 ```
 
 This change is committed but must be verified live by recreating only the Ollama container, checking `nvidia-smi` and `ollama ps`, and then testing that GPU access survives `systemctl daemon-reload`. Do not mark the CDI migration verified until that resilience test passes.
+
+
+## CDI live activation verified — 2026-10-05
+
+The server pulled the CDI Compose configuration and recreated only the Ollama container.
+
+Verified live:
+- `docker compose config` resolves the Ollama device as `nvidia.com/gpu=all`;
+- `nvidia-smi` works inside the CDI-created Ollama container;
+- after one API inference, `ollama ps` reports `100% GPU`;
+- host `nvidia-smi` shows `/usr/lib/ollama/llama-server` using about 3916 MiB VRAM;
+- total GPU memory usage was about 3986 MiB.
+
+This confirms CDI device injection is active and Qwen inference is running on the GTX 1660 Super.
+
+One resilience check remains before marking the GPU issue fully fixed: run `systemctl daemon-reload` while the CDI Ollama container is alive, then confirm both in-container `nvidia-smi` and `ollama ps` still show working GPU access.
