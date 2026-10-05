@@ -366,6 +366,18 @@ def _query_terms(queries: Sequence[str]) -> set[str]:
     return terms
 
 
+
+def _query_match_count(item: dict[str, Any], queries: Sequence[str]) -> int:
+    terms = _query_terms(queries)
+    haystack = " ".join(
+        (
+            str(item.get("title") or ""),
+            str(item.get("url") or ""),
+            str(item.get("snippet") or ""),
+        )
+    ).casefold()
+    return sum(1 for term in terms if term in haystack)
+
 def _query_relevance(item: dict[str, Any], queries: Sequence[str]) -> int:
     terms = _query_terms(queries)
     if not terms:
@@ -471,6 +483,7 @@ def web_research(
                 continue
             seen.add(url)
             enriched = dict(item)
+            enriched["_match_count"] = _query_match_count(item, planned_queries)
             enriched["_relevance"] = _query_relevance(item, planned_queries)
             enriched["_score"] = (
                 _source_score(item)
@@ -487,7 +500,11 @@ def web_research(
             int(item.get("id", 999)),
         )
     )
-    relevant = [item for item in merged if int(item.get("_relevance", 0)) >= 5]
+    relevant = [
+        item
+        for item in merged
+        if int(item.get("_match_count", 0)) >= 2 and int(item.get("_relevance", 0)) >= 8
+    ]
     selected = (relevant if len(relevant) >= 3 else merged)[:max_results]
     source_ids = {item["url"]: f"S{index}" for index, item in enumerate(selected, start=1)}
 
