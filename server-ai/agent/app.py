@@ -51,6 +51,17 @@ SYSTEM_PROMPT = os.getenv(
     ),
 )
 
+STRICT_GROUNDING_PROMPT = (
+    SYSTEM_PROMPT
+    + " ВАЖНО ДЛЯ ТЕКУЩЕЙ ДИАГНОСТИКИ: после вызова READ-инструментов все утверждения "
+      "о текущем состоянии сервера должны опираться только на результаты инструментов ЭТОГО запроса. "
+      "Не используй числа, списки контейнеров, uptime, версии, статусы или другие текущие значения из памяти "
+      "модели либо из предыдущей истории чата. Числа, имена и статусы переноси из tool-result точно, без "
+      "самовольного исправления или дополнения. Если нужный параметр инструментом не проверялся, напиши "
+      "«не проверено». Если инструмент вернул ошибку, укажи ошибку и не подменяй её предположением. "
+      "Можно делать выводы, но явно отделяй их от наблюдаемых данных."
+)
+
 security = HTTPBasic(auto_error=False)
 model_lock = asyncio.Lock()
 
@@ -148,6 +159,24 @@ def require_auth(
     return credentials.username
 
 
+def _tool_label(name: str, arguments: dict) -> str:
+    if name == "systemd_status":
+        return f"systemd_status({arguments.get('unit', '?')})"
+    if name == "journal":
+        unit = arguments.get("unit") or "all"
+        minutes = arguments.get("minutes", 60)
+        return f"journal({unit}, {minutes}m)"
+    if name == "docker_logs":
+        return f"docker_logs({arguments.get('container', '?')})"
+    if name == "git_status":
+        return f"git_status({arguments.get('path', '?')})"
+    if name in {"read_text_file", "list_files", "find_files", "search_text"}:
+        return f"{name}({arguments.get('path', '?')})"
+    if name == "server_snapshot":
+        return f"server_snapshot({arguments.get('section', '?')})"
+    return name
+
+
 def _compact_tool_content(result: dict) -> str:
     raw = json.dumps(result, ensure_ascii=False)
     if len(raw) <= TOOL_RESULT_CHARS:
@@ -175,14 +204,21 @@ async def ask_model(user_text: str, source: str) -> str:
     async with model_lock:
         add_message("user", text, source)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *model_history()]
+        grounded_messages = [
+            {"role": "system", "content": STRICT_GROUNDING_PROMPT},
+            {"role": "user", "content": text},
+        ]
+        tool_trace: list[str] = []
+        grounded_mode = False
         answer = ""
 
         try:
             async with httpx.AsyncClient(timeout=240.0) as client:
                 for _ in range(MAX_TOOL_ROUNDS):
+                    active_messages = grounded_messages if grounded_mode else messages
                     payload = {
                         "model": MODEL,
-                        "messages": messages,
+                        "messages": active_messages,
                         "stream": False,
                         "think": QWEN_THINK,
                         "keep_alive": "10m",
@@ -200,7 +236,13 @@ async def ask_model(user_text: str, source: str) -> str:
                         answer = str(message.get("content") or "").strip()
                         break
 
-                    messages.append(message)
+                    # As soon as a READ tool is used, drop old chat history from
+                    # the synthesis context. Only the current user request and
+                    # tool evidence from this turn remain authoritative.
+                    if not grounded_mode:
+                        grounded_mode = True
+                    grounded_messages.append(message)
+
                     for call in tool_calls:
                         function = call.get("function") or {}
                         name = str(function.get("name") or "")
@@ -210,15 +252,19 @@ async def ask_model(user_text: str, source: str) -> str:
                             print(f"[READ] tool={name} argument_keys={sorted(arguments.keys())}", flush=True)
                             result = await asyncio.to_thread(execute_tool, name, arguments)
                         except Exception as exc:
+                            arguments = {}
                             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
                         elapsed = time.monotonic() - started
                         tool_content = _compact_tool_content(result)
+                        label = _tool_label(name, arguments)
+                        tool_trace.append(label)
                         print(
                             f"[READ] tool={name} elapsed={elapsed:.2f}s result_chars={len(tool_content)}",
                             flush=True,
                         )
 
-                        messages.append(
+                        grounded_messages.append(
                             {
                                 "role": "tool",
                                 "tool_name": name,
@@ -230,6 +276,10 @@ async def ask_model(user_text: str, source: str) -> str:
 
                 if not answer:
                     answer = "Модель вернула пустой итоговый ответ после READ-проверки. Повтори запрос или уточни задачу."
+
+                if tool_trace:
+                    checked = ", ".join(dict.fromkeys(tool_trace))
+                    answer = answer.rstrip() + f"\n\nПроверено инструментами: {checked}."
         except Exception as exc:
             answer = f"Ошибка обращения к локальной модели/READ-инструментам: {type(exc).__name__}: {exc}"
 
@@ -356,6 +406,7 @@ async def health() -> dict:
         "model": MODEL,
         "telegram": bool(TELEGRAM_TOKEN),
         "read_tools": READ_TOOLS_ENABLED and Path("/run/server-ai/read.sock").exists(),
+        "strict_grounding": True,
     }
 
 
