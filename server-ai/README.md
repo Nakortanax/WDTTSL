@@ -427,3 +427,19 @@ Application-level enforcement was added:
 Health now reports `"read_enforcement": true`. Telegram `/status` reports `READ enforcement: ON`.
 
 Stage 3 still requires one final live verification after this enforcement change.
+
+
+## Mandatory READ enforcement verified live — 2026-10-05
+
+The enforced health path was verified on the live server.
+
+Agent trace:
+
+```text
+[READ] selected=server_health reason=health_request
+[READ] tool=server_health elapsed=0.03s result_chars=1710
+```
+
+This confirms that a broad current server-health request can no longer be answered from stale chat history: the application selects and executes fresh `server_health` data before synthesis.
+
+The compact structured payload is now 1710 characters, comfortably below the configured tool-result limit. Final Stage 3 verification still requires checking the Telegram answer itself against the current structured health data and confirming the `Проверено инструментами: server_health.` suffix.
