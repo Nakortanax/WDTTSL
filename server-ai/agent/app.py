@@ -362,7 +362,7 @@ async def telegram_loop() -> None:
                 if text == "/status":
                     state = "OK" if await ollama_ok() else "ERROR"
                     tools_state = "ON" if READ_TOOLS_ENABLED and Path("/run/server-ai/read.sock").exists() else "OFF"
-                    await telegram_send(chat_id, f"Ollama: {state}\nМодель: {MODEL}\nREAD tools: {tools_state}")
+                    await telegram_send(chat_id, f"Ollama: {state}\nМодель: {MODEL}\nREAD tools: {tools_state}\nGrounding: STRICT")
                     continue
                 if text == "/new":
                     clear_messages()
