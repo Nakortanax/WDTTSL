@@ -234,3 +234,28 @@ docker compose up -d --build agent
 ```
 
 After rebuild, repeat one normal Telegram message and confirm that both the message and a non-empty assistant reply appear in Web UI.
+
+
+## Stage 2 fully verified — 2026-10-05
+
+Final live check passed.
+
+Telegram prompt:
+
+```text
+Ответь одним предложением: где ты сейчас работаешь?
+```
+
+Agent response:
+
+```text
+Я работаю локально на вашем домашнем Ubuntu-сервере.
+```
+
+This confirms:
+- Telegram -> agent -> local Qwen response path works;
+- `think=false` fix prevents blank assistant messages;
+- the model correctly identifies its local deployment context;
+- shared Telegram/Web history remains enabled.
+
+Stage 2 is now considered complete. Next stage: READ-only server tools and filesystem visibility, without write/admin privileges.
