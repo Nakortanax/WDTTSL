@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py read_tools.py ./
+COPY app.py read_tools.py web_tools.py ./
 COPY web ./web
 
 EXPOSE 8092
