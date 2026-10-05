@@ -318,3 +318,27 @@ Next requirement before marking Stage 3 fully trusted:
 - expose/retain tool-call evidence for debugging;
 - avoid filling missing fields from model memory or guesses;
 - optionally include a short "checked data" section from tool results in diagnostic answers.
+
+
+## Stage 3 strict grounding rollout — 2026-10-05
+
+A stricter synthesis path was added for READ requests.
+
+After the first READ tool call in a request:
+- previous chat history is removed from the factual synthesis context;
+- only the current user request and READ tool results from the current turn remain authoritative;
+- the model is instructed to copy current values exactly from tool output;
+- missing values must be reported as `не проверено`;
+- tool errors must be reported instead of replaced by guesses;
+- inferences must be separated from observed data;
+- the final reply automatically appends a `Проверено инструментами` line.
+
+Health now exposes:
+
+```json
+"strict_grounding": true
+```
+
+Telegram `/status` and the Web UI also display `Grounding: STRICT`.
+
+This rollout must be live-tested against the same server-health request and compared with direct READ broker output before Stage 3 is considered trusted.
