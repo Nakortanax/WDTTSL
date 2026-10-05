@@ -635,3 +635,21 @@ Expected trace for the same Telegram test after rollout:
 [WEB] tool=web_research elapsed=... result_chars=...
 ```
 There should be no second `web_research`, no `[READ] rejected_stale_answer`, and no `server_health`.
+
+
+## Stage 4 research-quality pass — prepared, awaiting live verification — 2026-10-05
+
+The deterministic WEB execution loop is now correct in live use: one explicit WEB request produced exactly one `web_research` call, no READ fallback, and Qwen stayed on `100% GPU`. However, the answer quality was not accepted as final because the raw user instruction was being sent directly as the SearXNG query. That produced weak Russian-language results (including unrelated aggregator pages) and encouraged unsupported conclusions such as inferring that no newer changes existed simply because they were not found.
+
+Quality improvements prepared:
+- an internal Qwen query-planning pass now converts the user request into 2-3 focused search queries;
+- international technical topics are instructed to include an English query aimed at official docs/release notes/releases;
+- `web_research` now merges multiple focused searches, deduplicates URLs and ranks likely primary sources higher;
+- documentation hosts, release-note/changelog paths and official repository release pages receive higher source scores;
+- up to three diverse pages may be fetched, while evidence remains bounded;
+- WEB grounding explicitly forbids converting “not found” into claims such as “there were no changes after year X”;
+- dates, versions and years may only be stated when present in current WEB evidence;
+- tool-result compaction now preserves valid JSON instead of cutting JSON mid-string;
+- Telegram reply chunking now prefers newline/word boundaries so source URLs are less likely to be split between messages.
+
+This quality pass is not yet marked verified. Re-run the same NVIDIA Container Toolkit / Docker CDI research request and check that primary sources dominate the final source list and that unsupported absence claims are gone.
