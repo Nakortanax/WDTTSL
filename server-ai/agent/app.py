@@ -326,12 +326,12 @@ def _normalize_tool_arguments(value) -> dict:
 
 def _fallback_web_queries(text: str) -> list[str]:
     compact = re.sub(
-        r"(?i)\\b(найди|поищи|в интернете|в сети|актуальную|актуальные|информацию|сравни|несколько|источников|"
-        r"отдели|подтвержд[её]нные|факты|выводы|дай|краткий|структурированный|отч[её]т|пожалуйста)\\b",
+        r"(?i)\b(найди|поищи|в интернете|в сети|актуальную|актуальные|информацию|сравни|несколько|источников|"
+        r"отдели|подтвержд[её]нные|факты|выводы|дай|краткий|структурированный|отч[её]т|пожалуйста)\b",
         " ",
         text,
     )
-    compact = re.sub(r"\\s+", " ", compact).strip(" .,:;-")
+    compact = re.sub(r"\s+", " ", compact).strip(" .,:;-")
     if len(compact) > 180:
         compact = compact[:180].rsplit(" ", 1)[0]
 
@@ -349,7 +349,6 @@ def _fallback_web_queries(text: str) -> list[str]:
     if not queries:
         queries.append(text[:180])
     return queries[:3]
-
 
 async def _plan_web_queries(client: httpx.AsyncClient, text: str) -> list[str]:
     today = time.strftime("%Y-%m-%d")
