@@ -189,3 +189,19 @@ After Stage 2 is verified:
 4. approval-gated host executor;
 5. Homer card and monitoring integration;
 6. recovery checkpoint.
+
+
+## Stage 2 live verification — 2026-10-05
+
+Confirmed on the live home server:
+
+- Telegram bot responds to `/start`;
+- Telegram `/status` reports Ollama OK and model `qwen3.5:4b-q4_K_M`;
+- Web UI opens on the LAN;
+- Web UI health header reports Ollama OK and Telegram ON;
+- Web chat sends prompts to the local Qwen model and receives a response identifying itself as the local Server AI Agent.
+
+One remaining Stage 2 check before declaring shared-history behavior fully verified:
+send a normal (non-command) message in Telegram and confirm that the message and model reply appear in the Web UI history.
+
+Do not enable host filesystem, shell, Docker socket or administrative execution until the shared-history check is complete.
