@@ -292,7 +292,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "server_health",
-            "description": "Get one compact read-only health report with uptime, memory, filesystems, running Docker containers and failed systemd units. Prefer this for broad server health checks.",
+            "description": "Get one compact complete read-only health report with uptime, memory, real mounted filesystems (pseudo/overlay mounts omitted), running Docker containers/count, and failed systemd units/count. Prefer this for broad server health checks.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
