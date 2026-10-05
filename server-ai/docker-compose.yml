@@ -34,6 +34,12 @@ services:
       - "${AGENT_BIND_IP:-192.168.1.73}:8092:8092"
     volumes:
       - ${SERVER_AI_DATA_DIR:-/var/lib/server-ai}/agent:/data
+      - /etc:/host/etc:ro
+      - /var/log:/host/var/log:ro
+      - /home:/host/home:ro
+      - /opt:/host/opt:ro
+      - /srv:/host/srv:ro
+      - /run/server-ai:/run/server-ai:ro
     user: "${SERVER_AI_UID:-1000}:${SERVER_AI_GID:-1000}"
     read_only: true
     tmpfs:
