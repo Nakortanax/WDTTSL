@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Server AI Agent</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#111318;color:#e8e9ed}
+    *{box-sizing:border-box} body{margin:0;background:#111318}
+    .app{max-width:1050px;margin:auto;min-height:100vh;display:flex;flex-direction:column;padding:18px}
+    header{display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1px solid #2a2e37;padding-bottom:14px}
+    h1{font-size:22px;margin:0}.muted{color:#9aa1ad;font-size:13px}.status{font-size:13px}
+    #messages{flex:1;display:flex;flex-direction:column;gap:12px;padding:20px 0;overflow:auto}
+    .msg{max-width:82%;padding:12px 14px;border-radius:14px;white-space:pre-wrap;line-height:1.45}
+    .user{align-self:flex-end;background:#263b64}.assistant{align-self:flex-start;background:#20242c}
+    .meta{display:block;font-size:11px;color:#9aa1ad;margin-top:7px}
+    form{display:flex;gap:10px;position:sticky;bottom:0;background:#111318;padding:12px 0}
+    textarea{flex:1;resize:vertical;min-height:58px;max-height:180px;border:1px solid #343a46;border-radius:12px;background:#191d24;color:#fff;padding:12px}
+    button{border:0;border-radius:10px;padding:0 18px;background:#355ea8;color:white;font-weight:600;cursor:pointer}
+    button.secondary{background:#292e38;padding:9px 12px}.busy{opacity:.55;pointer-events:none}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div><h1>Server AI Agent</h1><div class="muted">Qwen · общая история Telegram + Web</div></div>
+    <div><span id="status" class="status">проверка…</span> <button id="new" class="secondary">Новый диалог</button></div>
+  </header>
+  <main id="messages"></main>
+  <form id="form">
+    <textarea id="input" placeholder="Напиши задачу агенту…" required></textarea>
+    <button id="send" type="submit">Отправить</button>
+  </form>
+</div>
+<script>
+const box=document.getElementById('messages'), form=document.getElementById('form');
+const input=document.getElementById('input'), send=document.getElementById('send');
+let lastSignature='';
+
+function render(messages){
+  const sig=JSON.stringify(messages.map(m=>[m.id,m.content]));
+  if(sig===lastSignature)return;
+  lastSignature=sig; box.textContent='';
+  for(const m of messages){
+    const div=document.createElement('div');
+    div.className='msg '+(m.role==='user'?'user':'assistant');
+    const body=document.createElement('div'); body.textContent=m.content;
+    const meta=document.createElement('span'); meta.className='meta';
+    meta.textContent=(m.source||'')+' · '+(m.created_at||'');
+    div.append(body,meta); box.appendChild(div);
+  }
+  box.scrollTop=box.scrollHeight;
+}
+
+async function refresh(){
+  try{
+    const [h,m]=await Promise.all([fetch('/health'),fetch('/api/messages')]);
+    const health=await h.json(), data=await m.json();
+    document.getElementById('status').textContent=
+      'Ollama: '+(health.ollama?'OK':'ERROR')+' · '+health.model+' · Telegram: '+(health.telegram?'ON':'OFF');
+    render(data.messages||[]);
+  }catch(e){document.getElementById('status').textContent='ошибка связи';}
+}
+
+form.addEventListener('submit',async e=>{
+  e.preventDefault(); const message=input.value.trim(); if(!message)return;
+  input.value=''; send.classList.add('busy'); send.textContent='Думаю…';
+  try{
+    await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});
+    await refresh();
+  }finally{send.classList.remove('busy');send.textContent='Отправить';input.focus();}
+});
+
+document.getElementById('new').addEventListener('click',async()=>{
+  if(!confirm('Очистить общую историю Telegram + Web?'))return;
+  await fetch('/api/new',{method:'POST'}); lastSignature=''; await refresh();
+});
+
+input.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}
+});
+
+refresh(); setInterval(refresh,3000);
+</script>
+</body>
+</html>
