@@ -519,3 +519,24 @@ Live resilience test after migrating Ollama to CDI:
 - therefore the prior failure mode (`Failed to initialize NVML: Unknown Error`) did not recur.
 
 At the exact test moment `ollama ps` was empty both before and after daemon-reload because the model had already unloaded after its keep-alive timeout. Therefore this test proves CDI preserved NVIDIA device/NVML access across daemon-reload, but one final post-reload inference is still required to confirm Qwen reloads on `100% GPU`.
+
+
+## CDI GPU stabilization VERIFIED — 2026-10-05
+
+Final post-`systemctl daemon-reload` inference check passed.
+
+Verified live after the reload:
+- `ollama ps` reports `qwen3.5:4b-q4_K_M` on `100% GPU`;
+- in-container `nvidia-smi` works normally;
+- host `nvidia-smi` shows `/usr/lib/ollama/llama-server` using about 3924 MiB VRAM;
+- total GPU memory usage is about 3994 MiB;
+- the prior failure mode (`Failed to initialize NVML: Unknown Error` followed by CPU fallback) did not recur.
+
+The CDI migration is therefore considered fully verified. The persistent Compose configuration remains:
+
+```yaml
+devices:
+  - "nvidia.com/gpu=all"
+```
+
+Do not revert Ollama back to legacy `gpus: all` unless there is a specific compatibility reason and the NVML/cgroup regression is re-evaluated.
