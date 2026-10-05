@@ -1,0 +1,305 @@
+import asyncio
+import hmac
+import os
+import sqlite3
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Annotated
+
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
+
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
+MODEL = os.getenv("QWEN_MODEL", "qwen3.5:4b-q4_K_M")
+DB_PATH = Path(os.getenv("AGENT_DB_PATH", "/data/agent.db"))
+WEB_USER = os.getenv("AGENT_WEB_USER", "igor")
+WEB_PASSWORD = os.getenv("AGENT_WEB_PASSWORD", "")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+HISTORY_MESSAGES = max(4, int(os.getenv("AGENT_HISTORY_MESSAGES", "24")))
+
+SYSTEM_PROMPT = os.getenv(
+    "AGENT_SYSTEM_PROMPT",
+    (
+        "Ты Server AI Agent — локальная модель Qwen, запущенная на домашнем Ubuntu-сервере пользователя. "
+        "Не утверждай, что работаешь в облаке. Отвечай по-русски, если пользователь не попросил иначе. "
+        "Будь точным и не выдумывай результаты проверок. На текущем этапе у тебя есть только диалог и общая "
+        "история сообщений; системные инструменты, файловый доступ, shell, Git и интернет-поиск будут подключены "
+        "отдельно. Если задача требует ещё не подключённого инструмента, прямо скажи об этом."
+    ),
+)
+
+security = HTTPBasic(auto_error=False)
+model_lock = asyncio.Lock()
+
+
+def parse_allowed_ids() -> set[int]:
+    raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+    result: set[int] = set()
+    for item in raw.replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            result.add(int(item))
+        except ValueError:
+            raise RuntimeError("TELEGRAM_ALLOWED_USER_IDS must contain numeric Telegram user IDs")
+    return result
+
+
+ALLOWED_TELEGRAM_IDS = parse_allowed_ids()
+
+
+def connect_db() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with connect_db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.commit()
+
+
+def add_message(role: str, content: str, source: str) -> int:
+    with connect_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO messages(role, content, source) VALUES (?, ?, ?)",
+            (role, content, source),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def list_messages(limit: int = 200) -> list[dict]:
+    with connect_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, role, content, source, created_at
+            FROM messages
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in reversed(rows)]
+
+
+def model_history() -> list[dict]:
+    messages = list_messages(HISTORY_MESSAGES)
+    return [{"role": m["role"], "content": m["content"]} for m in messages]
+
+
+def clear_messages() -> None:
+    with connect_db() as conn:
+        conn.execute("DELETE FROM messages")
+        conn.commit()
+
+
+def require_auth(
+    credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
+) -> str:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    good_user = hmac.compare_digest(credentials.username, WEB_USER)
+    good_password = hmac.compare_digest(credentials.password, WEB_PASSWORD)
+    if not (good_user and good_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+
+async def ask_model(user_text: str, source: str) -> str:
+    text = user_text.strip()
+    if not text:
+        raise ValueError("Empty message")
+
+    async with model_lock:
+        add_message("user", text, source)
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}, *model_history()]
+        payload = {
+            "model": MODEL,
+            "messages": messages,
+            "stream": False,
+            "keep_alive": "10m",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=240.0) as client:
+                response = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+                response.raise_for_status()
+                data = response.json()
+                answer = data["message"]["content"].strip()
+        except Exception as exc:
+            answer = f"Ошибка обращения к локальной модели: {type(exc).__name__}: {exc}"
+
+        add_message("assistant", answer, "agent")
+        return answer
+
+
+async def ollama_ok() -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{OLLAMA_URL}/api/tags")
+            return response.is_success
+    except Exception:
+        return False
+
+
+async def telegram_api(method: str, payload: dict | None = None) -> dict:
+    if not TELEGRAM_TOKEN:
+        return {}
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
+    async with httpx.AsyncClient(timeout=65.0) as client:
+        response = await client.post(url, json=payload or {})
+        response.raise_for_status()
+        return response.json()
+
+
+async def telegram_send(chat_id: int, text: str) -> None:
+    remaining = text or "(пустой ответ)"
+    while remaining:
+        chunk = remaining[:3900]
+        remaining = remaining[3900:]
+        await telegram_api(
+            "sendMessage",
+            {"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
+        )
+
+
+async def telegram_loop() -> None:
+    if not TELEGRAM_TOKEN:
+        return
+    if not ALLOWED_TELEGRAM_IDS:
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN is set but TELEGRAM_ALLOWED_USER_IDS is empty"
+        )
+
+    offset = 0
+    while True:
+        try:
+            result = await telegram_api(
+                "getUpdates",
+                {
+                    "offset": offset,
+                    "timeout": 50,
+                    "allowed_updates": ["message"],
+                },
+            )
+            for update in result.get("result", []):
+                offset = max(offset, int(update["update_id"]) + 1)
+                message = update.get("message") or {}
+                sender = message.get("from") or {}
+                user_id = sender.get("id")
+                chat_id = message.get("chat", {}).get("id")
+                text = (message.get("text") or "").strip()
+
+                if not isinstance(user_id, int) or not isinstance(chat_id, int):
+                    continue
+                if user_id not in ALLOWED_TELEGRAM_IDS:
+                    continue
+                if not text:
+                    await telegram_send(chat_id, "Пока поддерживаются текстовые сообщения.")
+                    continue
+
+                if text == "/start":
+                    await telegram_send(
+                        chat_id,
+                        f"Server AI Agent запущен локально. Модель: {MODEL}. "
+                        "История общая с веб-панелью.",
+                    )
+                    continue
+                if text == "/status":
+                    state = "OK" if await ollama_ok() else "ERROR"
+                    await telegram_send(chat_id, f"Ollama: {state}\nМодель: {MODEL}")
+                    continue
+                if text == "/new":
+                    clear_messages()
+                    await telegram_send(chat_id, "Общая история диалога очищена.")
+                    continue
+
+                await telegram_send(chat_id, "Принял. Думаю…")
+                answer = await ask_model(text, "telegram")
+                await telegram_send(chat_id, answer)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await asyncio.sleep(5)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if not WEB_PASSWORD or WEB_PASSWORD.startswith("CHANGE_ME"):
+        raise RuntimeError("Set a strong AGENT_WEB_PASSWORD in server-ai/.env")
+    init_db()
+    telegram_task = asyncio.create_task(telegram_loop())
+    try:
+        yield
+    finally:
+        telegram_task.cancel()
+        await asyncio.gather(telegram_task, return_exceptions=True)
+
+
+app = FastAPI(title="Server AI Agent", version="0.1.0", lifespan=lifespan)
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {
+        "ok": True,
+        "ollama": await ollama_ok(),
+        "model": MODEL,
+        "telegram": bool(TELEGRAM_TOKEN),
+    }
+
+
+@app.get("/")
+async def index(_: Annotated[str, Depends(require_auth)]):
+    return FileResponse("/app/web/index.html")
+
+
+@app.get("/api/messages")
+async def messages(_: Annotated[str, Depends(require_auth)]) -> dict:
+    return {"messages": list_messages()}
+
+
+@app.post("/api/chat")
+async def chat(
+    request: ChatRequest,
+    _: Annotated[str, Depends(require_auth)],
+) -> dict:
+    try:
+        answer = await ask_model(request.message, "web")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"answer": answer}
+
+
+@app.post("/api/new")
+async def new_chat(_: Annotated[str, Depends(require_auth)]) -> dict:
+    clear_messages()
+    return {"ok": True}
