@@ -763,3 +763,42 @@ The latest Telegram test verified the full WEB execution and verification pipeli
 One residual wording issue remains before declaring factual synthesis fully trusted: the answer still said that v1.20.1 “does not contain new CDI changes compared with v1.12.0”. The checked evidence establishes that no such CDI changes were found in the fetched excerpts, but it does not prove their absolute absence. This should be phrased as “the checked sources did not confirm additional CDI changes”.
 
 Operationally, Stage 4 WEB search/orchestration/citation plumbing is verified. One final negative-claim wording hardening is pending for factual conservatism.
+
+
+## WEB citation/verifier fail-closed fix — prepared, awaiting live verification — 2026-10-05
+
+The latest live test exposed one remaining trust bug in the WEB synthesis pipeline.
+
+Observed live:
+- query planning and the single deterministic `web_research` call succeeded;
+- the first synthesis cited `S3`, but `S3` was not in the set of fetched evidence sources;
+- the citation retry still produced a draft containing the bad source ID;
+- the evidence-only verifier correctly logged `result=rejected`;
+- despite that rejection, the application returned the unchecked draft because the verifier fallback returned the original draft.
+
+Fix prepared:
+- explicit WEB synthesis now receives evidence-only JSON containing only successfully fetched `documents[].text`, their source IDs, URLs and titles;
+- search-only result IDs are no longer exposed as factual evidence to the synthesizer;
+- the WEB evidence explicitly includes `allowed_source_ids`;
+- after one citation rewrite, a second missing/unknown source-ID failure is blocked instead of being accepted;
+- verifier rejection/error now returns no answer, and the application blocks the unchecked draft rather than sending it;
+- the user receives an explicit message that the unverified draft was blocked if grounding cannot be repaired.
+
+Expected healthy live path:
+```text
+[WEB] selected=web_research ...
+[WEB] tool=web_research ...
+[WEB] verification_pass result=accepted cited=[...]
+```
+
+Expected failure-safe path:
+```text
+[WEB] citation_grounding_block ...
+```
+or
+```text
+[WEB] verification_pass result=rejected ...
+[WEB] verification_block final=1
+```
+
+In both failure cases, unsupported prose must no longer be returned to Telegram/Web.
