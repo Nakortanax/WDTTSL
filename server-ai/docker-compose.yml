@@ -20,6 +20,33 @@ services:
       retries: 5
       start_period: 20s
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: server-ai-searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET}"
+      FORCE_OWNERSHIP: "false"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    tmpfs:
+      - /var/cache/searxng
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3).read(1)"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   agent:
     build:
       context: ./agent
@@ -32,6 +59,7 @@ services:
       - .env
     environment:
       OLLAMA_URL: http://ollama:11434
+      SEARXNG_URL: http://searxng:8080
       AGENT_DB_PATH: /data/agent.db
     ports:
       - "${AGENT_BIND_IP:-192.168.1.73}:8092:8092"
