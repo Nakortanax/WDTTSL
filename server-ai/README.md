@@ -509,3 +509,13 @@ Verified live:
 This confirms CDI device injection is active and Qwen inference is running on the GTX 1660 Super.
 
 One resilience check remains before marking the GPU issue fully fixed: run `systemctl daemon-reload` while the CDI Ollama container is alive, then confirm both in-container `nvidia-smi` and `ollama ps` still show working GPU access.
+
+
+## CDI daemon-reload resilience test — device access passed, inference recheck pending — 2026-10-05
+
+Live resilience test after migrating Ollama to CDI:
+- before `systemctl daemon-reload`, in-container `nvidia-smi` succeeded;
+- after `systemctl daemon-reload`, in-container `nvidia-smi` still succeeded;
+- therefore the prior failure mode (`Failed to initialize NVML: Unknown Error`) did not recur.
+
+At the exact test moment `ollama ps` was empty both before and after daemon-reload because the model had already unloaded after its keep-alive timeout. Therefore this test proves CDI preserved NVIDIA device/NVML access across daemon-reload, but one final post-reload inference is still required to confirm Qwen reloads on `100% GPU`.
