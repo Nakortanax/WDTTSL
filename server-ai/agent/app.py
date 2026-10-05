@@ -424,6 +424,66 @@ async def _plan_web_queries(client: httpx.AsyncClient, text: str) -> list[str]:
     return _fallback_web_queries(text)
 
 
+async def _verify_web_synthesis(
+    client: httpx.AsyncClient,
+    user_text: str,
+    evidence_json: str,
+    draft: str,
+    valid_source_ids: set[str],
+) -> str:
+    verifier_messages = [
+        {
+            "role": "system",
+            "content": (
+                "Ты строгий редактор-проверяющий WEB-ответа. Не отвечай на исходный вопрос заново и не используй "
+                "внешние знания. Сверь черновик только с WEB evidence JSON. Для технических фактов разрешено опираться "
+                "только на documents[].text; results[].snippet служат только для навигации и не подтверждают подробные "
+                "утверждения. Удали или перепиши всё, чего нет в тексте соответствующего источника. Версии, даты, "
+                "названия сервисов и тип релиза переноси точно, без сокращений и догадок. Не превращай bugfix в beta, "
+                "v1.12.0 в 12.0 и не смешивай разные продукты. Каждый проверяемый факт должен иметь [S#] источника, "
+                "который прямо его подтверждает. Если данных недостаточно, так и напиши. Верни только JSON "
+                'вида {"answer":"исправленный ответ"}.'
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Запрос пользователя:\n{user_text}\n\n"
+                f"WEB evidence JSON:\n{evidence_json}\n\n"
+                f"Черновик:\n{draft}"
+            ),
+        },
+    ]
+    payload = {
+        "model": MODEL,
+        "messages": verifier_messages,
+        "stream": False,
+        "think": False,
+        "keep_alive": "10m",
+        "format": "json",
+    }
+    try:
+        response = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+        response.raise_for_status()
+        content = str((response.json().get("message") or {}).get("content") or "")
+        data = json.loads(content)
+        revised = str(data.get("answer") or "").strip() if isinstance(data, dict) else ""
+        cited = set(re.findall(r"\[(S\d+)\]", revised))
+        if revised and cited and not (cited - valid_source_ids):
+            print(
+                f"[WEB] verification_pass result=accepted cited={sorted(cited)} chars={len(revised)}",
+                flush=True,
+            )
+            return revised
+        print(
+            f"[WEB] verification_pass result=rejected cited={sorted(cited)}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"[WEB] verification_pass result=error type={type(exc).__name__}", flush=True)
+    return draft
+
+
 async def ask_model(user_text: str, source: str) -> str:
     text = user_text.strip()
     if not text:
@@ -651,6 +711,15 @@ async def ask_model(user_text: str, source: str) -> str:
                                     flush=True,
                                 )
                                 continue
+                        if require_web and web_sources:
+                            valid_ids = {source_id for source_id, _, _ in web_sources}
+                            candidate = await _verify_web_synthesis(
+                                client,
+                                text,
+                                tool_content,
+                                candidate,
+                                valid_ids,
+                            )
                         answer = candidate
                         break
 
