@@ -136,15 +136,125 @@ def server_snapshot(section: str) -> dict[str, Any]:
     return {"ok": True, "result": result}
 
 
-def server_health() -> dict[str, Any]:
-    checks = {
-        "uptime": run(["uptime"], timeout=8),
-        "memory": run(["free", "-h"], timeout=8),
-        "filesystems": run(["df", "-hT"], timeout=8),
-        "docker": run(["docker", "ps", "--format", "table {{.Names}}\t{{.Status}}"], timeout=10),
-        "failed_systemd": run(["systemctl", "--failed", "--no-pager", "--plain"], timeout=10),
+def read_meminfo() -> dict[str, Any]:
+    values: dict[str, int] = {}
+    with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+        for line in handle:
+            key, raw = line.split(":", 1)
+            parts = raw.strip().split()
+            if not parts:
+                continue
+            number = int(parts[0])
+            if len(parts) > 1 and parts[1].lower() == "kb":
+                number *= 1024
+            values[key] = number
+
+    total = values.get("MemTotal", 0)
+    available = values.get("MemAvailable", 0)
+    free = values.get("MemFree", 0)
+    buffers = values.get("Buffers", 0)
+    cached = values.get("Cached", 0) + values.get("SReclaimable", 0)
+    used = max(0, total - available)
+
+    swap_total = values.get("SwapTotal", 0)
+    swap_free = values.get("SwapFree", 0)
+    return {
+        "total_bytes": total,
+        "used_bytes": used,
+        "free_bytes": free,
+        "available_bytes": available,
+        "buffers_bytes": buffers,
+        "cached_bytes": cached,
+        "swap_total_bytes": swap_total,
+        "swap_used_bytes": max(0, swap_total - swap_free),
+        "swap_free_bytes": swap_free,
     }
-    return {"ok": True, "result": checks}
+
+
+def read_uptime() -> dict[str, Any]:
+    with open("/proc/uptime", "r", encoding="utf-8") as handle:
+        uptime_seconds = float(handle.read().split()[0])
+    return {
+        "uptime_seconds": int(uptime_seconds),
+        "load_average": list(os.getloadavg()),
+    }
+
+
+def read_filesystems() -> list[dict[str, Any]]:
+    result = run(["df", "-PT", "-B1"], timeout=8)
+    if not result.get("ok"):
+        return [{"error": result.get("error") or result.get("output") or "df failed"}]
+
+    rows: list[dict[str, Any]] = []
+    lines = str(result.get("output", "")).splitlines()
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts) < 7:
+            continue
+        filesystem, fs_type, size, used, avail, capacity = parts[:6]
+        mount = " ".join(parts[6:])
+        try:
+            rows.append({
+                "filesystem": filesystem,
+                "type": fs_type,
+                "size_bytes": int(size),
+                "used_bytes": int(used),
+                "available_bytes": int(avail),
+                "use_percent": int(capacity.rstrip("%")),
+                "mountpoint": mount,
+            })
+        except ValueError:
+            continue
+    return rows
+
+
+def read_docker_containers() -> list[dict[str, str]]:
+    result = run(["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"], timeout=10)
+    if not result.get("ok"):
+        return [{"error": result.get("error") or result.get("output") or "docker ps failed"}]
+
+    rows: list[dict[str, str]] = []
+    for line in str(result.get("output", "")).splitlines():
+        if not line.strip():
+            continue
+        name, _, status = line.partition("\t")
+        rows.append({"name": name.strip(), "status": status.strip()})
+    return rows
+
+
+def read_failed_units() -> list[dict[str, str]]:
+    result = run(
+        ["systemctl", "--failed", "--no-legend", "--no-pager", "--plain"],
+        timeout=10,
+    )
+    if not result.get("ok") and result.get("returncode") not in {0, 1}:
+        return [{"error": result.get("error") or result.get("output") or "systemctl failed"}]
+
+    rows: list[dict[str, str]] = []
+    for line in str(result.get("output", "")).splitlines():
+        parts = line.split(None, 4)
+        if len(parts) >= 4:
+            rows.append({
+                "unit": parts[0],
+                "load": parts[1],
+                "active": parts[2],
+                "sub": parts[3],
+                "description": parts[4] if len(parts) > 4 else "",
+            })
+    return rows
+
+
+def server_health() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "result": {
+            "uptime": read_uptime(),
+            "memory": read_meminfo(),
+            "filesystems": read_filesystems(),
+            "docker": read_docker_containers(),
+            "failed_systemd": read_failed_units(),
+        },
+    }
 
 
 def dispatch(action: str, args: dict[str, Any]) -> dict[str, Any]:
