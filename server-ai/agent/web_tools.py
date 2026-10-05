@@ -2,7 +2,7 @@ import ipaddress
 import os
 import re
 import socket
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -212,31 +212,96 @@ def web_fetch(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
     raise RuntimeError("Too many redirects")
 
 
+
+def _source_score(item: dict[str, Any]) -> int:
+    url = str(item.get("url") or "")
+    title = str(item.get("title") or "").casefold()
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").casefold()
+    path = (parsed.path or "").casefold()
+
+    score = 0
+    if host.startswith(("docs.", "documentation.", "developer.")):
+        score += 5
+    if host.endswith((".gov", ".gov.ru", ".edu")):
+        score += 4
+    if host in {"github.com", "gitlab.com"}:
+        score += 3
+    if any(token in path for token in ("/releases", "release-notes", "changelog", "/docs", "/documentation")):
+        score += 4
+    if any(token in title for token in ("release notes", "documentation", "docs", "changelog", "releases")):
+        score += 3
+    if any(token in host for token in ("forum", "reddit", "medium", "blog")):
+        score -= 1
+    return score
+
+
+def _normalize_queries(query: str | None, queries: Sequence[str] | None) -> list[str]:
+    result: list[str] = []
+    for value in list(queries or []) + ([query] if query else []):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        text = SPACE_RE.sub(" ", text)
+        if len(text) > 220:
+            text = text[:220].rsplit(" ", 1)[0] or text[:220]
+        if text.casefold() not in {item.casefold() for item in result}:
+            result.append(text)
+        if len(result) >= 3:
+            break
+    if not result:
+        raise ValueError("query or queries is required")
+    return result
+
 def web_research(
-    query: str,
-    max_results: int = 4,
-    fetch_top: int = 2,
-    language: str = "ru",
+    query: str | None = None,
+    queries: Sequence[str] | None = None,
+    max_results: int = 6,
+    fetch_top: int = 3,
+    language: str = "auto",
     time_range: str | None = None,
 ) -> dict[str, Any]:
-    max_results = max(2, min(int(max_results), 4))
-    fetch_top = max(0, min(int(fetch_top), 2))
-    search = web_search(query, max_results=max_results, language=language, time_range=time_range)
+    planned_queries = _normalize_queries(query, queries)
+    max_results = max(2, min(int(max_results), 6))
+    fetch_top = max(0, min(int(fetch_top), 3))
+
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    per_query = max(3, min(5, max_results))
+    for search_query in planned_queries:
+        search = web_search(
+            search_query,
+            max_results=per_query,
+            language=language,
+            time_range=time_range,
+        )
+        for rank, item in enumerate(search["results"], start=1):
+            url = item["url"]
+            if url in seen:
+                continue
+            seen.add(url)
+            enriched = dict(item)
+            enriched["_score"] = _source_score(item) + max(0, 4 - rank)
+            enriched["_query"] = search_query
+            merged.append(enriched)
+
+    merged.sort(key=lambda item: (-int(item.get("_score", 0)), int(item.get("id", 999))))
+    selected = merged[:max_results]
 
     documents = []
     used_hosts: set[str] = set()
-    for item in search["results"]:
+    for item in selected:
         if len(documents) >= fetch_top:
             break
         host = (urlparse(item["url"]).hostname or "").lower()
-        if host in used_hosts:
+        if host in used_hosts and len(used_hosts) < fetch_top:
             continue
         used_hosts.add(host)
         try:
-            page = web_fetch(item["url"], max_chars=500)
+            page = web_fetch(item["url"], max_chars=600)
             documents.append(
                 {
-                    "id": item["id"],
                     "title": page["title"],
                     "url": page["url"],
                     "text": page["text"],
@@ -245,7 +310,6 @@ def web_research(
         except Exception as exc:
             documents.append(
                 {
-                    "id": item["id"],
                     "title": item["title"],
                     "url": item["url"],
                     "error": f"{type(exc).__name__}: {exc}",
@@ -254,16 +318,18 @@ def web_research(
 
     compact_results = [
         {
-            "id": item["id"],
-            "title": _clip(item["title"], 160),
+            "title": _clip(str(item["title"]), 150),
             "url": item["url"],
-            "snippet": _clip(item["snippet"], 140),
+            "snippet": _clip(str(item.get("snippet") or ""), 130),
             "published": item.get("published"),
+            "matched_query": item.get("_query"),
         }
-        for item in search["results"]
+        for item in selected
     ]
+
     return {
-        "query": query,
+        "queries": planned_queries,
+        "result_count": len(compact_results),
         "results": compact_results,
         "documents": documents,
     }
@@ -295,13 +361,19 @@ WEB_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Focused web search query."},
-                    "max_results": {"type": "integer", "minimum": 2, "maximum": 4},
-                    "fetch_top": {"type": "integer", "minimum": 0, "maximum": 2},
-                    "language": {"type": "string", "description": "Search language, normally ru or en."},
+                    "query": {"type": "string", "description": "One focused web search query."},
+                    "queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "description": "Up to three focused search queries, preferably with language/source diversity."
+                    },
+                    "max_results": {"type": "integer", "minimum": 2, "maximum": 6},
+                    "fetch_top": {"type": "integer", "minimum": 0, "maximum": 3},
+                    "language": {"type": "string", "description": "Search language or auto."},
                     "time_range": {"type": "string", "enum": ["day", "month", "year"]},
                 },
-                "required": ["query"],
             },
         },
     },
