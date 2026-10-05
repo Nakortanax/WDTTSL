@@ -335,6 +335,53 @@ def _compact_tool_content(result: dict) -> str:
         preview = preview[: max(200, len(preview) - 250)]
 
 
+
+def _web_evidence_content(result: dict) -> str:
+    root = result.get("result") if isinstance(result, dict) else None
+    if not isinstance(root, dict):
+        return _compact_tool_content(result)
+
+    documents = []
+    raw_documents = root.get("documents")
+    if isinstance(raw_documents, list):
+        for item in raw_documents:
+            if not isinstance(item, dict):
+                continue
+            source_id = str(item.get("source_id") or "").strip()
+            text = str(item.get("text") or "").strip()
+            url = str(item.get("url") or "").strip()
+            if not source_id or not text or not url:
+                continue
+            documents.append(
+                {
+                    "source_id": source_id,
+                    "title": str(item.get("title") or url).strip(),
+                    "url": url,
+                    "text": text,
+                }
+            )
+
+    evidence = {
+        "queries": root.get("queries") if isinstance(root.get("queries"), list) else [],
+        "documents": documents,
+        "allowed_source_ids": [item["source_id"] for item in documents],
+    }
+    return _compact_tool_content({"ok": bool(result.get("ok")), "result": evidence})
+
+
+def _valid_web_source_ids(result: dict) -> set[str]:
+    root = result.get("result") if isinstance(result, dict) else None
+    if not isinstance(root, dict):
+        return set()
+    documents = root.get("documents")
+    if not isinstance(documents, list):
+        return set()
+    return {
+        str(item.get("source_id"))
+        for item in documents
+        if isinstance(item, dict) and item.get("source_id") and item.get("text")
+    }
+
 def _normalize_tool_arguments(value) -> dict:
     if value is None:
         return {}
@@ -430,7 +477,7 @@ async def _verify_web_synthesis(
     evidence_json: str,
     draft: str,
     valid_source_ids: set[str],
-) -> str:
+) -> str | None:
     verifier_messages = [
         {
             "role": "system",
@@ -485,7 +532,7 @@ async def _verify_web_synthesis(
         )
     except Exception as exc:
         print(f"[WEB] verification_pass result=error type={type(exc).__name__}", flush=True)
-    return draft
+    return None
 
 
 async def ask_model(user_text: str, source: str) -> str:
@@ -550,7 +597,7 @@ async def ask_model(user_text: str, source: str) -> str:
                     )
                     result = await asyncio.to_thread(execute_web_tool, "web_research", arguments)
                     elapsed = time.monotonic() - started
-                    tool_content = _compact_tool_content(result)
+                    tool_content = _web_evidence_content(result)
                     tool_trace.append("web_research")
                     web_used = True
                     grounded_mode = True
@@ -583,8 +630,9 @@ async def ask_model(user_text: str, source: str) -> str:
                                     "Интернет-поиск уже выполнен приложением. "
                                     "Не вызывай инструменты. Сформируй итоговый ответ только по WEB-данным "
                                     "этого запроса: краткий вывод, ключевые факты и неопределённости/расхождения. "
-                                    "Каждый проверяемый факт пометь [S#] из WEB-данных. "
-                                    "Источники приложение добавит автоматически."
+                                    "Используй только documents[].text и только allowed_source_ids из WEB-данных. "
+                                    "Search snippets тебе не передаются как доказательства. Каждый проверяемый факт "
+                                    "пометь [S#] из allowed_source_ids. Источники приложение добавит автоматически."
                                 ),
                             },
                         ]
@@ -697,33 +745,51 @@ async def ask_model(user_text: str, source: str) -> str:
                             valid_ids = {source_id for source_id, _, _ in web_sources}
                             cited_ids = set(re.findall(r"\[(S\d+)\]", candidate))
                             bad_ids = cited_ids - valid_ids
-                            if (not cited_ids or bad_ids) and not retry_web_citations:
-                                retry_web_citations = True
-                                active_messages.append(
-                                    {
-                                        "role": "user",
-                                        "content": (
-                                            "Перепиши итоговый WEB-ответ. Каждый проверяемый факт должен иметь "
-                                            "ссылку на существующий source_id вида [S1], [S2] из текущих WEB-данных. "
-                                            "Не используй несуществующие S#. Не добавляй факты, которые нельзя "
-                                            "подтвердить конкретным источником."
-                                        ),
-                                    }
-                                )
+                            if not cited_ids or bad_ids:
+                                if not retry_web_citations:
+                                    retry_web_citations = True
+                                    active_messages.append(
+                                        {
+                                            "role": "user",
+                                            "content": (
+                                                "Перепиши итоговый WEB-ответ. Используй только source_id из "
+                                                "allowed_source_ids текущих WEB-данных. Каждый проверяемый факт "
+                                                "должен иметь [S#]. Не используй другие S# и не добавляй факты, "
+                                                "которых нет в documents[].text."
+                                            ),
+                                        }
+                                    )
+                                    print(
+                                        f"[WEB] citation_grounding_retry cited={sorted(cited_ids)} bad={sorted(bad_ids)}",
+                                        flush=True,
+                                    )
+                                    continue
                                 print(
-                                    f"[WEB] citation_grounding_retry cited={sorted(cited_ids)} bad={sorted(bad_ids)}",
+                                    f"[WEB] citation_grounding_block cited={sorted(cited_ids)} bad={sorted(bad_ids)}",
                                     flush=True,
                                 )
-                                continue
+                                answer = (
+                                    "WEB-поиск выполнен, но итоговый ответ не прошёл проверку привязки фактов "
+                                    "к прочитанным источникам. Непроверенный черновик заблокирован."
+                                )
+                                break
                         if require_web and web_sources:
                             valid_ids = {source_id for source_id, _, _ in web_sources}
-                            candidate = await _verify_web_synthesis(
+                            verified = await _verify_web_synthesis(
                                 client,
                                 text,
                                 tool_content,
                                 candidate,
                                 valid_ids,
                             )
+                            if verified is None:
+                                answer = (
+                                    "WEB-поиск выполнен, но итоговый ответ не прошёл evidence-only проверку. "
+                                    "Непроверенный черновик заблокирован."
+                                )
+                                print("[WEB] verification_block final=1", flush=True)
+                                break
+                            candidate = verified
                         answer = candidate
                         break
 
