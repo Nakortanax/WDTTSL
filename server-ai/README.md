@@ -372,3 +372,21 @@ Verified baseline at the test moment:
 - failed systemd units: 0.
 
 The agent log grep returned no `[READ]` lines at this point, so the grounded Telegram health request still needs to be sent/re-sent and then compared against this baseline before Stage 3 is marked fully trusted.
+
+
+## Grounding comparison result — 2026-10-05
+
+The strict-grounding health request was executed successfully with:
+
+```text
+[READ] tool=server_health argument_keys=[]
+[READ] tool=server_health elapsed=0.04s result_chars=3348
+```
+
+Ollama remained on `100% GPU`.
+
+The final Telegram response matched the live READ data closely, including uptime, memory, root storage, `/srv/media`, all 9 running Docker containers, and zero failed systemd units. One transcription error remained: the EFI filesystem usage percentage was reported as 11% although the direct `df` evidence showed 1% (11% belonged to `/boot`).
+
+Because of that residual numeric transcription error, Stage 3 is not yet marked fully trusted. The `server_health` broker now returns structured JSON fields instead of raw human-readable command tables for uptime, memory, filesystems, Docker containers and failed units. This is intended to reduce row/column confusion and numeric copying errors in the 4B model.
+
+The strict grounding prompt was also tightened to require Russian-only diagnostic prose unless another language is requested.
