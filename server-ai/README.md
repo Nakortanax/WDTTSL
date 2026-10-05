@@ -406,3 +406,24 @@ Fix:
 Detailed pseudo/overlay filesystem information remains available through the broader storage snapshot tool when specifically requested.
 
 This keeps the broad health payload compact enough to preserve all requested sections without increasing the local model context budget.
+
+
+## Mandatory fresh READ evidence — 2026-10-05
+
+A subsequent live health reply exposed another failure mode: Qwen sometimes answered a current server-state request from recent chat history without invoking any READ tool.
+
+Evidence from the failed live attempt:
+- no new `[READ]` log lines were produced for that reply;
+- the automatic `Проверено инструментами` suffix was absent;
+- the response repeated stale pseudo-filesystem details that had already been removed from the current compact `server_health` payload.
+
+Application-level enforcement was added:
+- current server-state requests are detected before a model-only answer is accepted;
+- broad health requests execute `server_health` deterministically before Qwen synthesizes the response;
+- other detected server-state requests get one retry instruction if Qwen tries to answer without calling a READ tool;
+- if Qwen still does not call a READ tool, the stale/model-only answer is blocked and replaced with an explicit diagnostic message;
+- explicit chat-history questions remain normal conversation and do not trigger server diagnostics.
+
+Health now reports `"read_enforcement": true`. Telegram `/status` reports `READ enforcement: ON`.
+
+Stage 3 still requires one final live verification after this enforcement change.
