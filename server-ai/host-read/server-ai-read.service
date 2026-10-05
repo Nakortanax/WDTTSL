@@ -1,0 +1,29 @@
+[Unit]
+Description=Server AI read-only host diagnostics broker
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=-/etc/server-ai-read.env
+ExecStart=/usr/bin/python3 /usr/local/lib/server-ai/host_read.py
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=server-ai
+RuntimeDirectoryMode=0755
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
