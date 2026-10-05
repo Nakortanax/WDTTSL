@@ -692,3 +692,29 @@ Verified:
 No autonomous WEB trace was expected from this direct `execute_web_tool("web_fetch", ...)` smoke test because it bypasses the chat/tool orchestration layer.
 
 Final Stage 4 verification still requires repeating the same Telegram research request and confirming the synthesized answer now uses these extracted current primary-source facts while retaining the one-call WEB trace.
+
+
+## Stage 4 end-to-end WEB test passed; factual attribution hardening added — 2026-10-05
+
+The latest Telegram test passed the complete WEB orchestration path:
+- explicit WEB intent planned 3 focused queries;
+- exactly one deterministic `web_research` call ran;
+- no READ fallback occurred;
+- the final Telegram answer used current primary sources and named NVIDIA Container Toolkit 1.20.1;
+- Qwen remained on `100% GPU`;
+- automatic source URLs were appended.
+
+The answer was substantially better, but this checkpoint is not yet considered fully trusted for factual synthesis. Review identified several attribution risks:
+- NVIDIA's CDI documentation says CDI generation support exists as of toolkit `v1.12.0`; the model rendered this imprecisely as “12.0”;
+- Docker's Buildx v0.22 CDI documentation is specifically about build-time CDI/BuildKit support and must not be presented as equivalent to runtime CDI behavior;
+- a claim mentioning `CDIPluginConfigMap` was not supported by the primary sources reviewed for this test and appears to be source mixing.
+
+Hardening added:
+- every WEB search result/document now has a stable source ID (`S1`, `S2`, ...);
+- fetched documents are preferred over snippet-only results in source ordering;
+- the synthesis prompt requires every verifiable WEB fact to carry a supporting `[S#]` marker;
+- claims that cannot be tied to a specific source must be omitted;
+- the application rejects a WEB synthesis with no valid source IDs or with unknown source IDs and gives Qwen one rewrite attempt;
+- the final automatic source list now includes the same `[S#]` IDs, making claim-to-source checking straightforward.
+
+Next live test: repeat the same NVIDIA Container Toolkit / Docker CDI request and confirm that factual bullets include matching `[S#]` markers and that unsupported mixed-source claims disappear.
