@@ -136,7 +136,21 @@ def server_snapshot(section: str) -> dict[str, Any]:
     return {"ok": True, "result": result}
 
 
+def server_health() -> dict[str, Any]:
+    checks = {
+        "uptime": run(["uptime"], timeout=8),
+        "memory": run(["free", "-h"], timeout=8),
+        "filesystems": run(["df", "-hT"], timeout=8),
+        "docker": run(["docker", "ps", "--format", "table {{.Names}}\t{{.Status}}"], timeout=10),
+        "failed_systemd": run(["systemctl", "--failed", "--no-pager", "--plain"], timeout=10),
+    }
+    return {"ok": True, "result": checks}
+
+
 def dispatch(action: str, args: dict[str, Any]) -> dict[str, Any]:
+    if action == "server_health":
+        return server_health()
+
     if action == "server_snapshot":
         return server_snapshot(args.get("section", ""))
 
