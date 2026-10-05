@@ -443,3 +443,25 @@ Agent trace:
 This confirms that a broad current server-health request can no longer be answered from stale chat history: the application selects and executes fresh `server_health` data before synthesis.
 
 The compact structured payload is now 1710 characters, comfortably below the configured tool-result limit. Final Stage 3 verification still requires checking the Telegram answer itself against the current structured health data and confirming the `Проверено инструментами: server_health.` suffix.
+
+
+## Full project checkpoint saved — 2026-10-05
+
+All Server AI Agent work completed up to this point has been committed to GitHub on branch `server-ai-agent`.
+
+Included in the checkpoint:
+- local Ollama/Qwen deployment and verified GPU execution;
+- shared Telegram + Web agent with SQLite history;
+- READ-only host broker and filesystem visibility;
+- secret filtering and broker allowlists;
+- strict grounding for diagnostic answers;
+- compact structured `server_health`;
+- protection against stale chat-history answers for current server-state requests;
+- mandatory fresh READ execution for broad health checks;
+- live verification that `server_health` is selected automatically and returns a compact payload below the configured tool-result limit;
+- documented NVIDIA container recovery after the systemd daemon-reload incident;
+- installer hardening to avoid unnecessary `systemctl daemon-reload`.
+
+Local secrets and machine-specific secret values remain intentionally excluded from GitHub (for example `server-ai/.env`, Telegram token, and web password).
+
+Current next step: verify the final grounded Telegram health response itself, then mark Stage 3 fully complete before enabling any WORK-mode write capabilities.
