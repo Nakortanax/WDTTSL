@@ -12,7 +12,7 @@ from typing import Any
 SOCKET_PATH = os.getenv("SERVER_AI_READ_SOCKET", "/run/server-ai/read.sock")
 SOCKET_UID = int(os.getenv("SERVER_AI_SOCKET_UID", "1000"))
 SOCKET_GID = int(os.getenv("SERVER_AI_SOCKET_GID", "1000"))
-MAX_OUTPUT = 30000
+MAX_OUTPUT = 12000
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9@_.:-]{1,160}$")
 CONTAINER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,160}$")
