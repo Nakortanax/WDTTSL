@@ -259,3 +259,22 @@ This confirms:
 - shared Telegram/Web history remains enabled.
 
 Stage 2 is now considered complete. Next stage: READ-only server tools and filesystem visibility, without write/admin privileges.
+
+
+## Stage 3 broker smoke test verified — 2026-10-05
+
+The native READ broker was installed and successfully queried through:
+
+```text
+/run/server-ai/read.sock
+```
+
+Verified live result from `server_snapshot(section=overview)`:
+
+- hostname: `home`;
+- uptime: about 7h15m at test time;
+- kernel: Ubuntu `7.0.0-38-generic`;
+- memory: 15 GiB total, about 12 GiB available;
+- swap: 4 GiB, effectively unused.
+
+This confirms the host-side read-only broker and Unix-socket transport are working. Stage 3 is not yet fully verified until the container health reports `read_tools: true` and Qwen autonomously invokes at least one READ tool from Telegram or Web.
