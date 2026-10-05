@@ -278,3 +278,21 @@ Verified live result from `server_snapshot(section=overview)`:
 - swap: 4 GiB, effectively unused.
 
 This confirms the host-side read-only broker and Unix-socket transport are working. Stage 3 is not yet fully verified until the container health reports `read_tools: true` and Qwen autonomously invokes at least one READ tool from Telegram or Web.
+
+
+## GPU container recovery checkpoint — 2026-10-05
+
+After installing the native READ broker, the existing Ollama container lost functional NVIDIA access: `/dev/nvidia*` was still present, but `nvidia-smi` inside the container returned `Failed to initialize NVML: Unknown Error`, CUDA initialization failed, and `ollama ps` showed the Qwen model on `100% CPU`.
+
+Recreating only the Ollama container restored NVIDIA access:
+
+```bash
+cd ~/WDTTSL/server-ai
+docker compose up -d --force-recreate ollama
+```
+
+Verified immediately after recreation: `docker compose exec ollama nvidia-smi` successfully reported the GTX 1660 Super.
+
+The READ broker installer was also changed so repeated code updates do not run `systemctl daemon-reload` unless the unit file itself changed. This reduces the chance of repeating the NVIDIA container/cgroup disruption during normal broker updates.
+
+The model GPU execution itself still requires a post-recreation inference check with `ollama ps` before marking full Qwen GPU operation restored.
