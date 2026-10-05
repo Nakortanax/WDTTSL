@@ -265,9 +265,51 @@ def _compact_tool_content(result: dict) -> str:
     raw = json.dumps(result, ensure_ascii=False)
     if len(raw) <= TOOL_RESULT_CHARS:
         return raw
-    suffix = f"...[truncated total={len(raw)} chars]"
-    keep = max(0, TOOL_RESULT_CHARS - len(suffix))
-    return raw[:keep] + suffix
+
+    # Keep tool content valid JSON even when evidence must be reduced.
+    try:
+        compact = json.loads(raw)
+        root = compact.get("result") if isinstance(compact, dict) else None
+        if isinstance(root, dict):
+            documents = root.get("documents")
+            if isinstance(documents, list):
+                root["documents"] = documents[:2]
+                for item in root["documents"]:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        item["text"] = item["text"][:350]
+
+            results = root.get("results")
+            if isinstance(results, list):
+                root["results"] = results[:5]
+                for item in root["results"]:
+                    if isinstance(item, dict):
+                        if isinstance(item.get("snippet"), str):
+                            item["snippet"] = item["snippet"][:90]
+                        item.pop("matched_query", None)
+
+            raw = json.dumps(compact, ensure_ascii=False)
+            if len(raw) <= TOOL_RESULT_CHARS:
+                return raw
+
+            if isinstance(root.get("documents"), list):
+                root["documents"] = root["documents"][:1]
+            if isinstance(root.get("results"), list):
+                root["results"] = root["results"][:4]
+            root["evidence_compacted"] = True
+            raw = json.dumps(compact, ensure_ascii=False)
+            if len(raw) <= TOOL_RESULT_CHARS:
+                return raw
+    except Exception:
+        pass
+
+    preview_limit = max(200, TOOL_RESULT_CHARS - 120)
+    fallback = {
+        "ok": bool(result.get("ok")) if isinstance(result, dict) else False,
+        "evidence_compacted": True,
+        "preview": raw[:preview_limit],
+    }
+    encoded = json.dumps(fallback, ensure_ascii=False)
+    return encoded[:TOOL_RESULT_CHARS]
 
 
 def _normalize_tool_arguments(value) -> dict:
