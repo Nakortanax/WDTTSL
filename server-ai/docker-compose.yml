@@ -3,7 +3,10 @@ services:
     image: ollama/ollama:latest
     container_name: server-ai-ollama
     restart: unless-stopped
-    gpus: all
+    # Use Docker's native CDI device injection instead of legacy --gpus/device requests.
+    # This avoids the NVIDIA cgroup/NVML failure observed after systemd daemon-reload.
+    devices:
+      - "nvidia.com/gpu=all"
     environment:
       OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-8192}"
     ports:
