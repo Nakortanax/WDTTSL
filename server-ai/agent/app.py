@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 import sqlite3
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -22,10 +23,11 @@ DB_PATH = Path(os.getenv("AGENT_DB_PATH", "/data/agent.db"))
 WEB_USER = os.getenv("AGENT_WEB_USER", "igor")
 WEB_PASSWORD = os.getenv("AGENT_WEB_PASSWORD", "")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-HISTORY_MESSAGES = max(4, int(os.getenv("AGENT_HISTORY_MESSAGES", "24")))
+HISTORY_MESSAGES = max(4, int(os.getenv("AGENT_HISTORY_MESSAGES", "8")))
 QWEN_THINK = os.getenv("QWEN_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}
 READ_TOOLS_ENABLED = os.getenv("AGENT_READ_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
-MAX_TOOL_ROUNDS = 6
+MAX_TOOL_ROUNDS = 4
+TOOL_RESULT_CHARS = max(1000, int(os.getenv("AGENT_TOOL_RESULT_CHARS", "3500")))
 
 SYSTEM_PROMPT = os.getenv(
     "AGENT_SYSTEM_PROMPT",
@@ -37,6 +39,7 @@ SYSTEM_PROMPT = os.getenv(
             "У тебя включён READ-режим: ты можешь самостоятельно использовать доступные инструменты для чтения "
             "файлов, поиска по разрешённым каталогам, просмотра systemd/journal, Docker, сети, дисков, GPU, "
             "процессов и Git-статуса. Используй инструменты, когда вопрос требует фактической проверки сервера. "
+            "Для общей проверки состояния сервера сначала используй server_health: он возвращает компактный отчёт одним вызовом. "
             "Никогда не проси пользователя вручную выполнить диагностическую команду, если нужные данные можно "
             "получить READ-инструментом. Не пытайся раскрывать пароли, токены, приватные ключи или другие секреты. "
             "READ-режим не умеет менять файлы, перезапускать службы, выполнять произвольный shell или админ-действия. "
@@ -145,6 +148,13 @@ def require_auth(
     return credentials.username
 
 
+def _compact_tool_content(result: dict) -> str:
+    raw = json.dumps(result, ensure_ascii=False)
+    if len(raw) <= TOOL_RESULT_CHARS:
+        return raw
+    return raw[:TOOL_RESULT_CHARS] + f"...[truncated {len(raw) - TOOL_RESULT_CHARS} chars]"
+
+
 def _normalize_tool_arguments(value) -> dict:
     if value is None:
         return {}
@@ -194,17 +204,25 @@ async def ask_model(user_text: str, source: str) -> str:
                     for call in tool_calls:
                         function = call.get("function") or {}
                         name = str(function.get("name") or "")
+                        started = time.monotonic()
                         try:
                             arguments = _normalize_tool_arguments(function.get("arguments"))
+                            print(f"[READ] tool={name} argument_keys={sorted(arguments.keys())}", flush=True)
                             result = await asyncio.to_thread(execute_tool, name, arguments)
                         except Exception as exc:
                             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                        elapsed = time.monotonic() - started
+                        tool_content = _compact_tool_content(result)
+                        print(
+                            f"[READ] tool={name} elapsed={elapsed:.2f}s result_chars={len(tool_content)}",
+                            flush=True,
+                        )
 
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_name": name,
-                                "content": json.dumps(result, ensure_ascii=False),
+                                "content": tool_content,
                             }
                         )
                 else:
