@@ -57,7 +57,7 @@ async function refresh(){
     const [h,m]=await Promise.all([fetch('/health'),fetch('/api/messages')]);
     const health=await h.json(), data=await m.json();
     document.getElementById('status').textContent=
-      'Ollama: '+(health.ollama?'OK':'ERROR')+' · '+health.model+' · Telegram: '+(health.telegram?'ON':'OFF')+' · READ: '+(health.read_tools?'ON':'OFF');
+      'Ollama: '+(health.ollama?'OK':'ERROR')+' · '+health.model+' · Telegram: '+(health.telegram?'ON':'OFF')+' · READ: '+(health.read_tools?'ON':'OFF')+' · Grounding: '+(health.strict_grounding?'STRICT':'OFF');
     render(data.messages||[]);
   }catch(e){document.getElementById('status').textContent='ошибка связи';}
 }
