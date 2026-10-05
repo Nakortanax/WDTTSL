@@ -296,8 +296,9 @@ async def ask_model(user_text: str, source: str) -> str:
         read_used = False
         web_used = False
         answer = ""
-        require_read = _requires_read(text)
-        require_web = _requires_web(text) and not require_read
+        explicit_web = _requires_web(text)
+        require_web = explicit_web
+        require_read = _requires_read(text) and not explicit_web
         retry_read = False
         retry_web = False
 
@@ -323,6 +324,60 @@ async def ask_model(user_text: str, source: str) -> str:
 
         try:
             async with httpx.AsyncClient(timeout=240.0) as client:
+                if require_web:
+                    arguments = {
+                        "query": text,
+                        "max_results": 4,
+                        "fetch_top": 2,
+                        "language": "ru",
+                    }
+                    started = time.monotonic()
+                    print("[WEB] selected=web_research reason=explicit_web_request", flush=True)
+                    result = await asyncio.to_thread(execute_web_tool, "web_research", arguments)
+                    elapsed = time.monotonic() - started
+                    tool_content = _compact_tool_content(result)
+                    tool_trace.append("web_research")
+                    web_used = True
+                    grounded_mode = True
+                    finalize_after_web = True
+                    for item in _collect_web_sources(result):
+                        if item not in web_sources:
+                            web_sources.append(item)
+                    grounded_messages.extend(
+                        [
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "web_research",
+                                            "arguments": arguments,
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "role": "tool",
+                                "tool_name": "web_research",
+                                "content": tool_content,
+                            },
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Интернет-поиск уже выполнен приложением. "
+                                    "Не вызывай инструменты. Сформируй итоговый ответ только по WEB-данным "
+                                    "этого запроса: краткий вывод, ключевые факты и неопределённости/расхождения. "
+                                    "Источники приложение добавит автоматически."
+                                ),
+                            },
+                        ]
+                    )
+                    print(
+                        f"[WEB] tool=web_research elapsed={elapsed:.2f}s result_chars={len(tool_content)}",
+                        flush=True,
+                    )
+
                 if require_read and _is_health_request(text):
                     arguments: dict = {}
                     started = time.monotonic()
