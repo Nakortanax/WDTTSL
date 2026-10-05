@@ -390,3 +390,19 @@ The final Telegram response matched the live READ data closely, including uptime
 Because of that residual numeric transcription error, Stage 3 is not yet marked fully trusted. The `server_health` broker now returns structured JSON fields instead of raw human-readable command tables for uptime, memory, filesystems, Docker containers and failed units. This is intended to reduce row/column confusion and numeric copying errors in the 4B model.
 
 The strict grounding prompt was also tightened to require Russian-only diagnostic prose unless another language is requested.
+
+
+## Grounding truncation fix — 2026-10-05
+
+The structured `server_health` result was still being clipped to the configured tool-result budget before the Docker and failed-systemd fields reached Qwen. Evidence: the READ trace reported `result_chars=3525` while the configured cap was 3500, and the model then incorrectly stated that Docker/systemd information was absent even though the direct broker JSON contained both sections.
+
+Fix:
+- `server_health` now omits pseudo filesystems (`overlay`, `tmpfs`, `efivarfs`) from the broad health summary;
+- real mounted filesystems remain, including root, `/boot`, `/boot/efi`, and `/srv/media`;
+- Docker containers plus `docker_count` are returned explicitly;
+- failed systemd units plus `failed_systemd_count` are returned explicitly;
+- the strict grounding prompt requires those fields to be reported when present.
+
+Detailed pseudo/overlay filesystem information remains available through the broader storage snapshot tool when specifically requested.
+
+This keeps the broad health payload compact enough to preserve all requested sections without increasing the local model context budget.
