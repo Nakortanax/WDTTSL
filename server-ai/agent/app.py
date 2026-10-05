@@ -429,6 +429,7 @@ async def ask_model(user_text: str, source: str) -> str:
         require_read = _requires_read(text) and not explicit_web
         retry_read = False
         retry_web = False
+        retry_web_citations = False
 
         enabled_tools = []
         if require_web:
@@ -500,6 +501,7 @@ async def ask_model(user_text: str, source: str) -> str:
                                     "Интернет-поиск уже выполнен приложением. "
                                     "Не вызывай инструменты. Сформируй итоговый ответ только по WEB-данным "
                                     "этого запроса: краткий вывод, ключевые факты и неопределённости/расхождения. "
+                                    "Каждый проверяемый факт пометь [S#] из WEB-данных. "
                                     "Источники приложение добавит автоматически."
                                 ),
                             },
@@ -668,7 +670,8 @@ async def ask_model(user_text: str, source: str) -> str:
                                         "Интернет-поиск для этого запроса уже выполнен. "
                                         "Больше инструменты не вызывай. Сформируй итоговый ответ только по "
                                         "полученным WEB-данным: краткий вывод, ключевые факты, затем "
-                                        "неопределённости/расхождения при наличии. Источники приложение добавит само."
+                                        "неопределённости/расхождения при наличии. Каждый проверяемый факт пометь "
+                                        "[S#] из WEB-данных. Источники приложение добавит само."
                                     ),
                                 }
                             )
@@ -684,8 +687,8 @@ async def ask_model(user_text: str, source: str) -> str:
 
                 if web_sources:
                     answer += "\n\nИсточники:"
-                    for title, url in web_sources[:6]:
-                        answer += f"\n- {title}: {url}"
+                    for source_id, title, url in web_sources[:6]:
+                        answer += f"\n- [{source_id}] {title}: {url}"
         except Exception as exc:
             answer = f"Ошибка обращения к локальной модели/инструментам: {type(exc).__name__}: {exc}"
 
