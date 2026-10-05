@@ -356,3 +356,19 @@ Grounding: STRICT
 ```
 
 This confirms the updated agent build is running with READ mode and strict grounding enabled. Final Stage 3 trust verification still requires comparing a grounded health response against the direct `server_health` broker output.
+
+
+## Strict grounding baseline captured — 2026-10-05
+
+Direct `server_health` broker output was captured before the final grounding comparison.
+
+Verified baseline at the test moment:
+- uptime: about 7h45m;
+- memory: 15 GiB total, 4.1 GiB used, 10 GiB available;
+- swap: 4.0 GiB total, ~104 KiB used;
+- root filesystem: 98G total, 40G used, 54G available, 43%;
+- `/srv/media`: 466G total, 198G used, 268G available, 43%;
+- Docker: 9 running containers;
+- failed systemd units: 0.
+
+The agent log grep returned no `[READ]` lines at this point, so the grounded Telegram health request still needs to be sent/re-sent and then compared against this baseline before Stage 3 is marked fully trusted.
