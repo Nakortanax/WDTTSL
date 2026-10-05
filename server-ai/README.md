@@ -540,3 +540,47 @@ devices:
 ```
 
 Do not revert Ollama back to legacy `gpus: all` unless there is a specific compatibility reason and the NVML/cgroup regression is re-evaluated.
+
+
+## Stage 4 WEB research — prepared, not yet live-verified — 2026-10-05
+
+Goal: allow the local Qwen agent to search the public internet, read relevant pages, compare sources and return structured answers with source URLs, without giving the model arbitrary shell/network execution.
+
+Architecture:
+- private `searxng/searxng` container on the internal Compose network;
+- no SearXNG host/LAN port is published;
+- SearXNG JSON search API is enabled for the agent;
+- new agent tools: `web_search`, `web_fetch`, `web_research`;
+- `web_research` searches several results and fetches a small number of diverse pages in one bounded call;
+- final agent replies automatically append the public source URLs actually returned by WEB tools.
+
+WEB safety controls:
+- only HTTP/HTTPS public destinations;
+- local, private, loopback, link-local, multicast, reserved and internal-name destinations are blocked;
+- fetch is limited to ports 80/443;
+- redirects are revalidated;
+- bounded timeouts, download size and extracted text size;
+- non-text content is refused in this first version;
+- page content is explicitly treated as untrusted evidence, never as instructions;
+- no arbitrary shell and no raw network command execution is exposed to Qwen.
+
+Grounding behavior:
+- explicit internet/current-information requests must use a WEB tool;
+- if Qwen tries to answer such a request only from memory/history, the answer is rejected and Qwen receives one forced tool-use retry;
+- WEB evidence from the current request is used for synthesis;
+- source URLs are appended by the application, not left solely to the model.
+
+Configuration added:
+- `AGENT_WEB_TOOLS=false` by default;
+- `SEARXNG_SECRET` must be generated locally and kept only in `server-ai/.env`;
+- `SEARXNG_URL=http://searxng:8080` is injected internally by Compose.
+
+Live verification checklist before marking Stage 4 verified:
+1. generate local `SEARXNG_SECRET` and set `AGENT_WEB_TOOLS=true`;
+2. start `searxng` and rebuild only `agent`;
+3. verify `/health` reports `web_tools:true` and `searxng:true`;
+4. verify Telegram `/status` reports `WEB tools: ON`;
+5. ask an explicitly current internet question;
+6. confirm agent logs contain `[WEB] tool=...`;
+7. confirm the answer contains structured facts and an automatic `Источники:` section;
+8. test that `web_fetch` refuses a private URL such as `http://127.0.0.1/`.
