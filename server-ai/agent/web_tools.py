@@ -346,6 +346,62 @@ def web_fetch(url: str, max_chars: int = MAX_PAGE_TEXT, focus_query: str | None 
 
 
 
+
+RELEVANCE_STOPWORDS = {
+    "the", "and", "for", "with", "from", "latest", "release", "releases", "notes",
+    "documentation", "docs", "current", "support", "supported", "version",
+    "найди", "поищи", "актуальная", "актуальные", "информация", "информацию",
+    "последние", "последних", "изменения", "изменениях", "поддержка", "поддержке",
+    "источники", "источников", "сравни", "краткий", "отчет", "отчёт",
+}
+
+
+def _query_terms(queries: Sequence[str]) -> set[str]:
+    terms: set[str] = set()
+    for query in queries:
+        for token in re.findall(r"[A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9.+#_-]{2,}", query):
+            low = token.casefold()
+            if low not in RELEVANCE_STOPWORDS:
+                terms.add(low)
+    return terms
+
+
+def _query_relevance(item: dict[str, Any], queries: Sequence[str]) -> int:
+    terms = _query_terms(queries)
+    if not terms:
+        return 0
+
+    title = str(item.get("title") or "").casefold()
+    url = str(item.get("url") or "").casefold()
+    snippet = str(item.get("snippet") or "").casefold()
+
+    score = 0
+    matched = 0
+    for term in terms:
+        hit = False
+        if term in title:
+            score += 5
+            hit = True
+        if term in url:
+            score += 3
+            hit = True
+        if term in snippet:
+            score += 1
+            hit = True
+        if hit:
+            matched += 1
+
+    # Reward pages that match several distinct topic terms, not only the vendor name.
+    score += matched * 2
+    if "/latest/" in url:
+        score += 4
+    # Version-pinned documentation is useful, but for a "latest/current" request
+    # prefer the moving latest docs unless the query explicitly asks for that version.
+    version_match = re.search(r"/(\d+\.\d+(?:\.\d+)?)/", url)
+    if version_match and version_match.group(1).casefold() not in " ".join(queries).casefold():
+        score -= 2
+    return score
+
 def _source_score(item: dict[str, Any]) -> int:
     url = str(item.get("url") or "")
     title = str(item.get("title") or "").casefold()
@@ -390,13 +446,13 @@ def web_research(
     query: str | None = None,
     queries: Sequence[str] | None = None,
     max_results: int = 6,
-    fetch_top: int = 3,
+    fetch_top: int = 4,
     language: str = "auto",
     time_range: str | None = None,
 ) -> dict[str, Any]:
     planned_queries = _normalize_queries(query, queries)
     max_results = max(2, min(int(max_results), 6))
-    fetch_top = max(0, min(int(fetch_top), 3))
+    fetch_top = max(0, min(int(fetch_top), 4))
 
     merged: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -415,23 +471,35 @@ def web_research(
                 continue
             seen.add(url)
             enriched = dict(item)
-            enriched["_score"] = _source_score(item) + max(0, 4 - rank)
+            enriched["_relevance"] = _query_relevance(item, planned_queries)
+            enriched["_score"] = (
+                _source_score(item)
+                + enriched["_relevance"]
+                + max(0, 4 - rank)
+            )
             enriched["_query"] = search_query
             merged.append(enriched)
 
-    merged.sort(key=lambda item: (-int(item.get("_score", 0)), int(item.get("id", 999))))
-    selected = merged[:max_results]
+    merged.sort(
+        key=lambda item: (
+            -int(item.get("_score", 0)),
+            -int(item.get("_relevance", 0)),
+            int(item.get("id", 999)),
+        )
+    )
+    relevant = [item for item in merged if int(item.get("_relevance", 0)) >= 5]
+    selected = (relevant if len(relevant) >= 3 else merged)[:max_results]
     source_ids = {item["url"]: f"S{index}" for index, item in enumerate(selected, start=1)}
 
     documents = []
-    used_hosts: set[str] = set()
+    host_counts: dict[str, int] = {}
     for item in selected:
         if len(documents) >= fetch_top:
             break
         host = (urlparse(item["url"]).hostname or "").lower()
-        if host in used_hosts and len(used_hosts) < fetch_top:
+        if host_counts.get(host, 0) >= 2:
             continue
-        used_hosts.add(host)
+        host_counts[host] = host_counts.get(host, 0) + 1
         try:
             page = web_fetch(
                 item["url"],
@@ -468,11 +536,17 @@ def web_research(
         for item in selected
     ]
 
+    evidence_source_ids = [
+        item["source_id"]
+        for item in documents
+        if isinstance(item, dict) and item.get("source_id") and item.get("text")
+    ]
     return {
         "queries": planned_queries,
         "result_count": len(compact_results),
         "results": compact_results,
         "documents": documents,
+        "evidence_source_ids": evidence_source_ids,
     }
 
 
@@ -511,7 +585,7 @@ WEB_TOOL_SCHEMAS = [
                         "description": "Up to three focused search queries, preferably with language/source diversity."
                     },
                     "max_results": {"type": "integer", "minimum": 2, "maximum": 6},
-                    "fetch_top": {"type": "integer", "minimum": 0, "maximum": 3},
+                    "fetch_top": {"type": "integer", "minimum": 0, "maximum": 4},
                     "language": {"type": "string", "description": "Search language or auto."},
                     "time_range": {"type": "string", "enum": ["day", "month", "year"]},
                 },
