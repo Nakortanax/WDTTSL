@@ -10,7 +10,7 @@ from typing import Any
 HOST_ROOT = Path("/host")
 HOST_SOCKET = os.getenv("HOST_READ_SOCKET", "/run/server-ai/read.sock")
 MAX_FILE_BYTES = 512 * 1024
-MAX_RESULT_CHARS = 24000
+MAX_RESULT_CHARS = 8000
 
 ALLOWED_ROOTS = {
     "/etc": HOST_ROOT / "etc",
@@ -25,7 +25,7 @@ DENY_EXACT = {
     "/etc/gshadow",
     "/etc/security/opasswd",
 }
-DENY_PARTS = {".ssh", ".gnupg", ".aws", ".kube", "private"}
+DENY_PARTS = {".ssh", ".gnupg", ".aws", ".kube", ".config", ".local", ".mozilla", "snap", "private"}
 DENY_SUFFIXES = {".key", ".pem", ".p12", ".pfx", ".jks", ".keystore"}
 DENY_NAMES = {
     ".env",
@@ -52,6 +52,8 @@ def _deny_reason(user_path: str, local_path: Path) -> str | None:
     if normalized in DENY_EXACT:
         return "sensitive system credential file"
     lower_name = local_path.name.lower()
+    if lower_name == ".env" or lower_name.startswith(".env."):
+        return "sensitive environment file"
     if lower_name in DENY_NAMES or any(lower_name.endswith(suffix) for suffix in DENY_SUFFIXES):
         return "sensitive credential/key file"
     if any(part.lower() in DENY_PARTS for part in local_path.parts):
@@ -101,6 +103,9 @@ def _safe_line(line: str) -> str:
             return line.split("=", 1)[0] + "=<REDACTED>"
         if ":" in line:
             return line.split(":", 1)[0] + ": <REDACTED>"
+        parts = line.split(None, 1)
+        if len(parts) == 2 and SECRET_LINE_RE.search(parts[0]):
+            return parts[0] + " <REDACTED>"
     return line
 
 
