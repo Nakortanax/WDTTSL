@@ -20,6 +20,7 @@ WEB_USER = os.getenv("AGENT_WEB_USER", "igor")
 WEB_PASSWORD = os.getenv("AGENT_WEB_PASSWORD", "")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 HISTORY_MESSAGES = max(4, int(os.getenv("AGENT_HISTORY_MESSAGES", "24")))
+QWEN_THINK = os.getenv("QWEN_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 SYSTEM_PROMPT = os.getenv(
     "AGENT_SYSTEM_PROMPT",
@@ -141,6 +142,7 @@ async def ask_model(user_text: str, source: str) -> str:
             "model": MODEL,
             "messages": messages,
             "stream": False,
+            "think": QWEN_THINK,
             "keep_alive": "10m",
         }
 
@@ -150,6 +152,8 @@ async def ask_model(user_text: str, source: str) -> str:
                 response.raise_for_status()
                 data = response.json()
                 answer = data["message"]["content"].strip()
+                if not answer:
+                    answer = "Модель вернула пустой итоговый ответ. Повтори запрос или проверь настройки thinking."
         except Exception as exc:
             answer = f"Ошибка обращения к локальной модели: {type(exc).__name__}: {exc}"
 
