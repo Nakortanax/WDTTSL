@@ -937,3 +937,27 @@ Agent behavior:
 - Web and Telegram status expose WORK ON/OFF.
 
 Live verification is required before this stage is marked usable. Start with broker/status/security smoke tests before asking Qwen to edit any project file.
+
+
+## Stage 5 WORK broker status smoke VERIFIED — 2026-10-06
+
+The first live WORK broker status check passed.
+
+Observed live:
+- workspace id: `wdttsl`;
+- isolated worktree: `/var/lib/server-ai/workspaces/wdttsl`;
+- source deployment repository: `/home/igor/WDTTSL`;
+- isolated worktree branch state: `DETACHED`;
+- isolated worktree HEAD: `2b151578fc65`;
+- worktree is clean (`dirty: false`);
+- no pending changes are present;
+- allowlisted checks are `diff-check` and `server-ai-python`;
+- broker policy reports `commit=false`, `push=false`, `delete=false`, and `arbitrary_shell=false`.
+
+This confirms that the host WORK broker is reachable and is operating on the separate isolated worktree rather than directly on the deployment checkout.
+
+Stage 5 is not yet marked usable. Next live checks must verify:
+1. write attempts are blocked while the worktree is DETACHED;
+2. the deployment checkout remains unchanged;
+3. the agent container can reach the WORK socket after `AGENT_WORK_TOOLS=true`;
+4. an actual controlled edit is performed only after creation of an `ai/...` branch, followed by diff/check validation.
