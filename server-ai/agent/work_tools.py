@@ -11,8 +11,10 @@ WORK_TOOL_NAMES = {
     "work_status",
     "work_list_files",
     "work_read_file",
+    "work_search_text",
     "work_create_branch",
     "work_write_file",
+    "work_replace_text",
     "work_diff",
     "work_check",
 }
@@ -99,9 +101,30 @@ WORK_TOOL_SCHEMAS = [
                 "properties": {
                     "workspace": {"type": "string"},
                     "path": {"type": "string", "description": "Relative file path inside the workspace."},
-                    "max_chars": {"type": "integer", "minimum": 500, "maximum": 20000},
+                    "start_line": {"type": "integer", "minimum": 1},
+                    "max_lines": {"type": "integer", "minimum": 1, "maximum": 160},
                 },
                 "required": ["workspace", "path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "work_search_text",
+            "description": (
+                "Search text inside the approved isolated worktree. Returns bounded path/line excerpts and skips "
+                ".git, build caches and credential-like paths. Use this to locate code before reading a focused range."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "workspace": {"type": "string"},
+                    "query": {"type": "string"},
+                    "path": {"type": "string", "description": "Relative directory to search, normally '.'."},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 60},
+                },
+                "required": ["workspace", "query"],
             },
         },
     },
@@ -147,6 +170,28 @@ WORK_TOOL_SCHEMAS = [
                     },
                 },
                 "required": ["workspace", "path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "work_replace_text",
+            "description": (
+                "Replace one exact text fragment in an existing file inside the isolated worktree. "
+                "Requires expected_sha256 from work_read_file and refuses zero or multiple matches. "
+                "Prefer this for focused edits to large files."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "workspace": {"type": "string"},
+                    "path": {"type": "string"},
+                    "old_text": {"type": "string"},
+                    "new_text": {"type": "string"},
+                    "expected_sha256": {"type": "string"},
+                },
+                "required": ["workspace", "path", "old_text", "new_text", "expected_sha256"],
             },
         },
     },
