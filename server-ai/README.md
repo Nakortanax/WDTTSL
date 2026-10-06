@@ -1105,3 +1105,21 @@ Hardening:
 - broker errors include a bounded exception message for future diagnosis.
 
 The deployment checkout remained clean. The isolated worktree still requires one scoped recovery to realign its detached HEAD/index before another autonomous WORK test.
+
+
+## Stage 5 isolated worktree recovery VERIFIED — 2026-10-06
+
+The one-time recovery of the linked WORK worktree completed successfully.
+
+Observed live:
+- installer repaired the `ai/...` ref namespace to mode `0770` owned by `igor:igor`;
+- the current staged/index anomaly was backed up to a patch before recovery;
+- `git reset --hard server-ai-agent` was executed only inside `/var/lib/server-ai/workspaces/wdttsl`;
+- isolated worktree HEAD and configured base now both equal `16a868c981acaf7988cf79e00e5628158e78864d`;
+- isolated worktree remains intentionally `DETACHED`, clean, and reports `behind_base=false`;
+- deployment checkout remains on `server-ai-agent` and clean;
+- `work_status` confirms no pending changes and the expected restricted WORK policy.
+
+This verifies that the partial failed-switch state has been fully recovered without touching the deployment checkout.
+
+Next live gate: rebuild the agent with the hardened WORK orchestration, then rerun the autonomous `ai/work-smoke-test` edit and confirm branch creation, one controlled edit, automatic diff/check validation, clean deployment checkout, and GPU-backed inference.
