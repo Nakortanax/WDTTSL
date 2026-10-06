@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from read_tools import TOOL_SCHEMAS, execute_tool
 from web_tools import WEB_TOOL_NAMES, WEB_TOOL_SCHEMAS, execute_web_tool
+from work_tools import WORK_TOOL_NAMES, WORK_TOOL_SCHEMAS, execute_work_tool
 
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
@@ -29,6 +30,7 @@ HISTORY_MESSAGES = max(4, int(os.getenv("AGENT_HISTORY_MESSAGES", "8")))
 QWEN_THINK = os.getenv("QWEN_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}
 READ_TOOLS_ENABLED = os.getenv("AGENT_READ_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.getenv("AGENT_WEB_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
+WORK_TOOLS_ENABLED = os.getenv("AGENT_WORK_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://searxng:8080").rstrip("/")
 MAX_TOOL_ROUNDS = 4
 TOOL_RESULT_CHARS = max(1000, int(os.getenv("AGENT_TOOL_RESULT_CHARS", "3500")))
@@ -37,6 +39,8 @@ READ_RESOURCE_RE = re.compile(r"(?i)(сервер|server|uptime|памят|\bram
 READ_INTENT_RE = re.compile(r"(?i)(проверь|проверить|покажи|посмотри|узнай|статус|состояни|ошиб|сколько|какие|есть ли|прочитай|найди|проанализ|диагност)")
 HISTORY_ONLY_RE = re.compile(r"(?i)(в истории|истори[ия]\s+чата|мы обсуждали|что обсуждали|помнишь|напомни)")
 WEB_INTENT_RE = re.compile(r"(?i)(в интернете|в сети|поищи|поиск в интернете|найди в интернете|найди в сети|актуальн|свеж|новост|latest|current version|на сегодня|погода|курс валют|цена сейчас|последн(?:яя|ие|ий)|новый релиз)")
+WORK_ACTION_RE = re.compile(r"(?i)(измени|исправь|почини|добавь|внеси|обнови|отредактируй|рефактор|реализуй|создай|перепиши|замени)")
+WORK_RESOURCE_RE = re.compile(r"(?i)(код|программ|проект|репозитор|файл|ветк|git|server[- ]?ai|wdttsl|python|docker[- ]?compose|readme)")
 
 SYSTEM_PROMPT = os.getenv(
     "AGENT_SYSTEM_PROMPT",
