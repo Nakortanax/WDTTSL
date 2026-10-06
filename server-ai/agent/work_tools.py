@@ -165,8 +165,8 @@ WORK_TOOL_SCHEMAS = [
                     "path": {"type": "string"},
                     "content": {"type": "string"},
                     "expected_sha256": {
-                        "type": ["string", "null"],
-                        "description": "Required sha256 for an existing file; null only for a new file.",
+                        "type": "string",
+                        "description": "Required sha256 for an existing file; omit for a new file.",
                     },
                 },
                 "required": ["workspace", "path", "content"],
