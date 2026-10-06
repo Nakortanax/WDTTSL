@@ -408,6 +408,9 @@ def work_write_file(
     if not branch.startswith("ai/"):
         raise PermissionError("Writes require an isolated ai/... branch")
 
+    if expected_sha256:
+        raise ValueError("work_write_file creates new files only; edit existing files with work_replace_text/work_insert_text")
+
     encoded = str(content).encode("utf-8")
     if len(encoded) > MAX_FILE_BYTES:
         raise ValueError(f"Content exceeds WORK write limit ({len(encoded)} > {MAX_FILE_BYTES} bytes)")
@@ -415,21 +418,8 @@ def work_write_file(
         raise ValueError("Binary content is not allowed")
 
     local = _safe_path(root, path, must_exist=False)
-    existed = local.exists()
-    old_mode = 0o644
-
-    if existed:
-        if local.is_symlink() or not local.is_file():
-            raise PermissionError("Only regular text files can be replaced")
-        old_raw = local.read_bytes()
-        current_sha = hashlib.sha256(old_raw).hexdigest()
-        if not expected_sha256:
-            raise ValueError("expected_sha256 is required when replacing an existing file")
-        if expected_sha256 != current_sha:
-            raise RuntimeError("File changed since it was read; sha256 mismatch")
-        old_mode = stat.S_IMODE(local.stat().st_mode)
-    elif expected_sha256:
-        raise RuntimeError("expected_sha256 was supplied for a file that does not exist")
+    if local.exists():
+        raise FileExistsError("work_write_file cannot replace an existing file; use work_replace_text/work_insert_text")
 
     parent = local.parent
     parent.mkdir(parents=True, exist_ok=True)
@@ -444,20 +434,19 @@ def work_write_file(
             handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temp_name, old_mode)
+        os.chmod(temp_name, 0o644)
         os.replace(temp_name, local)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
 
-    new_sha = hashlib.sha256(encoded).hexdigest()
     return {
         "workspace": workspace,
         "path": path,
         "branch": branch,
-        "created": not existed,
+        "created": True,
         "size": len(encoded),
-        "sha256": new_sha,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
     }
 
 
@@ -520,6 +509,76 @@ def work_replace_text(
         "path": path,
         "branch": branch,
         "replacements": 1,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "size": len(encoded),
+    }
+
+
+
+def work_insert_text(
+    workspace: str,
+    path: str,
+    anchor: str,
+    text: str,
+    position: str,
+    expected_sha256: str,
+) -> dict[str, Any]:
+    _, root = _workspace(workspace)
+    branch = _branch(root)
+    if not branch.startswith("ai/"):
+        raise PermissionError("Writes require an isolated ai/... branch")
+
+    local = _safe_path(root, path, must_exist=True)
+    if local.is_symlink() or not local.is_file():
+        raise PermissionError("Only regular text files can be edited")
+
+    raw = local.read_bytes()
+    if len(raw) > MAX_FILE_BYTES:
+        raise ValueError(f"File exceeds WORK write limit ({len(raw)} > {MAX_FILE_BYTES} bytes)")
+    if b"\x00" in raw[:4096]:
+        raise ValueError("Binary files are not editable in WORK mode")
+
+    current_sha = hashlib.sha256(raw).hexdigest()
+    if not expected_sha256 or expected_sha256 != current_sha:
+        raise RuntimeError("File changed since it was read; sha256 mismatch")
+
+    anchor = str(anchor)
+    insertion = str(text)
+    if not anchor:
+        raise ValueError("anchor must not be empty")
+    if position not in {"before", "after"}:
+        raise ValueError("position must be 'before' or 'after'")
+
+    source = raw.decode("utf-8")
+    count = source.count(anchor)
+    if count != 1:
+        raise RuntimeError(f"anchor must match exactly once; matches={count}")
+
+    replacement = insertion + anchor if position == "before" else anchor + insertion
+    updated = source.replace(anchor, replacement, 1)
+    encoded = updated.encode("utf-8")
+    if len(encoded) > MAX_FILE_BYTES:
+        raise ValueError(f"Updated file exceeds WORK write limit ({len(encoded)} > {MAX_FILE_BYTES} bytes)")
+
+    old_mode = stat.S_IMODE(local.stat().st_mode)
+    fd, temp_name = tempfile.mkstemp(prefix=".server-ai-work-", dir=str(local.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, old_mode)
+        os.replace(temp_name, local)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+    return {
+        "workspace": workspace,
+        "path": path,
+        "branch": branch,
+        "position": position,
+        "insertions": 1,
         "sha256": hashlib.sha256(encoded).hexdigest(),
         "size": len(encoded),
     }
@@ -597,6 +656,7 @@ ACTIONS = {
     "work_create_branch": work_create_branch,
     "work_write_file": work_write_file,
     "work_replace_text": work_replace_text,
+    "work_insert_text": work_insert_text,
     "work_diff": work_diff,
     "work_check": work_check,
 }
