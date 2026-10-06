@@ -588,7 +588,7 @@ async def ask_model(user_text: str, source: str) -> str:
         read_used = False
         web_used = False
         work_used = False
-        work_write_attempted = False
+        work_change_attempted = False
         answer = ""
         explicit_work = _requires_work(text)
         explicit_web = _requires_web(text) and not explicit_work
@@ -769,7 +769,8 @@ async def ask_model(user_text: str, source: str) -> str:
                         flush=True,
                     )
 
-                for _ in range(MAX_TOOL_ROUNDS):
+                tool_rounds = 10 if require_work else MAX_TOOL_ROUNDS
+                for _ in range(tool_rounds):
                     active_messages = grounded_messages if grounded_mode else messages
                     payload = {
                         "model": MODEL,
@@ -789,6 +790,29 @@ async def ask_model(user_text: str, source: str) -> str:
                     tool_calls = message.get("tool_calls") or []
 
                     if not tool_calls:
+                        if require_work and not work_change_attempted:
+                            if not retry_work:
+                                retry_work = True
+                                active_messages.append(
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "Пользователь просит изменить проект. Одного описания недостаточно. "
+                                            "Выполни задачу через WORK-инструменты: при необходимости создай ai/... ветку, "
+                                            "прочитай нужные файлы, внеси безопасное изменение, затем проверь diff/tests. "
+                                            "Если broker блокирует действие, вызови инструмент и сообщи реальную ошибку."
+                                        ),
+                                    }
+                                )
+                                print("[WORK] rejected_no_change retry=1", flush=True)
+                                continue
+                            answer = (
+                                "WORK-задача не выполнена: модель не попыталась внести контролируемое изменение "
+                                "в изолированный workspace. Неподтверждённый ответ заблокирован."
+                            )
+                            print("[WORK] rejected_no_change final=1", flush=True)
+                            break
+
                         if require_read and not read_used:
                             if not retry_read:
                                 retry_read = True
