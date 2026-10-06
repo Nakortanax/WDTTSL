@@ -634,6 +634,7 @@ async def ask_model(user_text: str, source: str) -> str:
         web_used = False
         work_used = False
         work_change_attempted = False
+        work_edit_succeeded = False
         answer = ""
         explicit_work = _requires_work(text)
         explicit_web = _requires_web(text) and not explicit_work
@@ -707,8 +708,10 @@ async def ask_model(user_text: str, source: str) -> str:
                                 "content": (
                                     "WORK-режим активен для workspace 'wdttsl'. Работай только через WORK-инструменты. "
                                     "Не трогай deployment checkout. Если нужно изменить существующий файл, сначала "
-                                    "найди и прочитай нужный фрагмент, затем используй sha256 для записи/замены. "
-                                    "После правок обязательно покажи diff и запусти разрешённые проверки."
+                                    "найди и прочитай нужный фрагмент, затем используй sha256. Для добавления небольшой "
+                                    "строки или блока предпочитай work_insert_text; work_write_file создаёт только новые файлы. "
+                                    "После успешного изменения не исследуй посторонние файлы и сразу сформулируй ответ: "
+                                    "приложение само выполнит обязательные work_diff и проверки."
                                 ),
                             },
                         ]
@@ -814,7 +817,7 @@ async def ask_model(user_text: str, source: str) -> str:
                         flush=True,
                     )
 
-                tool_rounds = 10 if require_work else MAX_TOOL_ROUNDS
+                tool_rounds = 14 if require_work else MAX_TOOL_ROUNDS
                 for _ in range(tool_rounds):
                     active_messages = grounded_messages if grounded_mode else messages
                     payload = {
