@@ -4,7 +4,7 @@ import socket
 from typing import Any
 
 
-HOST_WORK_SOCKET = os.getenv("HOST_WORK_SOCKET", "/run/server-ai/work.sock")
+HOST_WORK_SOCKET = os.getenv("HOST_WORK_SOCKET", "/run/server-ai/work/work.sock")
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 WORK_TOOL_NAMES = {
