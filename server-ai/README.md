@@ -961,3 +961,20 @@ Stage 5 is not yet marked usable. Next live checks must verify:
 2. the deployment checkout remains unchanged;
 3. the agent container can reach the WORK socket after `AGENT_WORK_TOOLS=true`;
 4. an actual controlled edit is performed only after creation of an `ai/...` branch, followed by diff/check validation.
+
+
+## Stage 5 deployment isolation check — partial live verification — 2026-10-06
+
+The live checkout/worktree isolation check confirmed:
+- deployment checkout remains on branch `server-ai-agent`;
+- the isolated AI worktree remains detached before any WORK branch is created;
+- the deployment checkout contained only untracked Python `__pycache__` artifacts produced by local syntax-compilation smoke tests, not WORK-broker edits.
+
+Hardening added immediately:
+- repository-level `.gitignore` now ignores Python bytecode/cache artifacts so syntax checks do not pollute `git status`;
+- `work_status` now reports configured `base_ref`, current `base_head` and whether the detached worktree is behind that base;
+- `work_create_branch` now creates every `ai/...` branch from the current configured `base_ref` (normally `server-ai-agent`) instead of from a potentially stale detached worktree HEAD.
+
+This avoids an important stale-base failure mode: the isolated worktree may remain detached at an older commit between deployments, but the first WORK branch will still start from the current local deployment branch after the source checkout is updated.
+
+The write-block smoke test while DETACHED is still required before enabling WORK inside the agent.
