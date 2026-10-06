@@ -978,3 +978,24 @@ Hardening added immediately:
 This avoids an important stale-base failure mode: the isolated worktree may remain detached at an older commit between deployments, but the first WORK branch will still start from the current local deployment branch after the source checkout is updated.
 
 The write-block smoke test while DETACHED is still required before enabling WORK inside the agent.
+
+
+## Stage 5 WORK isolation and pre-branch write guard VERIFIED — 2026-10-06
+
+Live host verification passed for the initial WORK safety boundary.
+
+Observed:
+- deployment checkout `/home/igor/WDTTSL` remained on `server-ai-agent`;
+- deployment `git status --short` was clean after adding Python cache ignores;
+- isolated worktree remained at `/var/lib/server-ai/workspaces/wdttsl`;
+- isolated worktree was still `DETACHED` and clean;
+- configured base is `server-ai-agent`;
+- broker reported `base_head=2660cb5bffe7` while detached worktree HEAD remained `2b151578fc65`, so `behind_base=true` was correctly detected;
+- a direct `work_write_file` attempt while DETACHED was rejected with `PermissionError: Writes require an isolated ai/... branch`;
+- the forbidden test file was confirmed absent afterwards;
+- broker reinstall did not change the systemd unit, so `daemon-reload` was correctly skipped;
+- `server-ai-work.service` restarted successfully and the WORK Unix socket remained available.
+
+This verifies that stale detached state is detected, writes are blocked before creation of an isolated `ai/...` branch, and the deployment checkout remains untouched.
+
+Next live gate: enable `AGENT_WORK_TOOLS=true`, rebuild only the agent, verify `work_tools:true` in health, verify WORK socket access from inside the agent container, and then run the first autonomous controlled edit in the isolated worktree.
