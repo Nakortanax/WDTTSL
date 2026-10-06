@@ -15,6 +15,7 @@ WORK_TOOL_NAMES = {
     "work_create_branch",
     "work_write_file",
     "work_replace_text",
+    "work_insert_text",
     "work_diff",
     "work_check",
 }
@@ -154,9 +155,8 @@ WORK_TOOL_SCHEMAS = [
         "function": {
             "name": "work_write_file",
             "description": (
-                "Create or replace one text file inside an approved isolated worktree. Existing files require "
-                "the sha256 returned by work_read_file. Writes are allowed only while on an ai/... branch. "
-                "Deletion, rename, chmod, secrets and .git internals are not exposed."
+                "Create one NEW text file inside an approved isolated worktree. It never replaces an existing file. "
+                "For existing files use work_replace_text or work_insert_text. Writes are allowed only on an ai/... branch."
             ),
             "parameters": {
                 "type": "object",
@@ -166,7 +166,7 @@ WORK_TOOL_SCHEMAS = [
                     "content": {"type": "string"},
                     "expected_sha256": {
                         "type": "string",
-                        "description": "Required sha256 for an existing file; omit for a new file.",
+                        "description": "Do not use for new files; retained only for compatibility and rejected if supplied.",
                     },
                 },
                 "required": ["workspace", "path", "content"],
@@ -192,6 +192,29 @@ WORK_TOOL_SCHEMAS = [
                     "expected_sha256": {"type": "string"},
                 },
                 "required": ["workspace", "path", "old_text", "new_text", "expected_sha256"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "work_insert_text",
+            "description": (
+                "Insert text immediately before or after one exact anchor in an existing text file. "
+                "Requires sha256 from work_read_file and refuses zero/multiple anchor matches. "
+                "Prefer this for adding a small block or line without replacing the whole file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "workspace": {"type": "string"},
+                    "path": {"type": "string"},
+                    "anchor": {"type": "string"},
+                    "text": {"type": "string"},
+                    "position": {"type": "string", "enum": ["before", "after"]},
+                    "expected_sha256": {"type": "string"},
+                },
+                "required": ["workspace", "path", "anchor", "text", "position", "expected_sha256"],
             },
         },
     },
