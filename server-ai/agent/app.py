@@ -970,9 +970,15 @@ async def ask_model(user_text: str, source: str) -> str:
                             arguments = _normalize_tool_arguments(function.get("arguments"))
                             if name in WORK_TOOL_NAMES:
                                 print(f"[WORK] tool={name} argument_keys={sorted(arguments.keys())}", flush=True)
-                                if name in {"work_create_branch", "work_write_file", "work_replace_text"}:
+                                if name in {"work_write_file", "work_replace_text", "work_insert_text"}:
                                     work_change_attempted = True
                                 result = await asyncio.to_thread(execute_work_tool, name, arguments)
+                                if (
+                                    name in {"work_write_file", "work_replace_text", "work_insert_text"}
+                                    and isinstance(result, dict)
+                                    and result.get("ok")
+                                ):
+                                    work_edit_succeeded = True
                                 work_used = True
                                 prefix = "[WORK]"
                             elif name in WEB_TOOL_NAMES:
