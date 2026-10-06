@@ -15,7 +15,7 @@ from typing import Any
 
 
 CONFIG_PATH = Path(os.getenv("SERVER_AI_WORK_CONFIG", "/etc/server-ai/workspaces.json"))
-DEFAULT_SOCKET = "/run/server-ai/work.sock"
+DEFAULT_SOCKET = "/run/server-ai/work/work.sock"
 MAX_REQUEST_BYTES = 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024
 MAX_RESULT_CHARS = 20000
