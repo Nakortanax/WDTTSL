@@ -688,8 +688,10 @@ class WorkHandler(socketserver.StreamRequestHandler):
                 )
                 response = {"ok": True, "result": result}
             except Exception as exc:
+                error_text = str(exc).replace("\n", " ").replace("\r", " ")[:1000]
                 print(
-                    f"[WORK-BROKER] error action={locals().get('action', '?')} type={type(exc).__name__}",
+                    f"[WORK-BROKER] error action={locals().get('action', '?')} "
+                    f"type={type(exc).__name__} message={error_text!r}",
                     flush=True,
                 )
                 response = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
