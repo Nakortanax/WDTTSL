@@ -48,7 +48,9 @@ if [[ ! -e "${WORKTREE_DIR}/.git" ]]; then
     echo "Refusing to reuse non-empty non-worktree directory: ${WORKTREE_DIR}" >&2
     exit 1
   fi
-  rm -rf "${WORKTREE_DIR}"
+  if [[ -d "${WORKTREE_DIR}" ]]; then
+    rmdir "${WORKTREE_DIR}"
+  fi
   echo "Creating isolated detached Git worktree..."
   runuser -u "${RUN_USER}" --     git -c core.hooksPath=/dev/null -C "${REPO_ROOT}"     worktree add --detach "${WORKTREE_DIR}" "${BASE_REF}"
 else
