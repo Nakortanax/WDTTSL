@@ -238,7 +238,12 @@ def work_list_files(workspace: str, path: str = ".", limit: int = 100) -> dict[s
     return {"workspace": workspace, "path": path, "entries": entries}
 
 
-def work_read_file(workspace: str, path: str, max_chars: int = 12000) -> dict[str, Any]:
+def work_read_file(
+    workspace: str,
+    path: str,
+    start_line: int = 1,
+    max_lines: int = 80,
+) -> dict[str, Any]:
     _, root = _workspace(workspace)
     local = _safe_path(root, path, must_exist=True)
     if not local.is_file():
@@ -251,14 +256,85 @@ def work_read_file(workspace: str, path: str, max_chars: int = 12000) -> dict[st
         raise ValueError("Binary files are not exposed in WORK mode")
     digest = hashlib.sha256(raw).hexdigest()
     text = raw.decode("utf-8", errors="replace")
-    max_chars = max(500, min(int(max_chars), MAX_RESULT_CHARS))
+    lines = text.splitlines()
+    start_line = max(1, int(start_line))
+    max_lines = max(1, min(int(max_lines), 160))
+    selected = lines[start_line - 1:start_line - 1 + max_lines]
+    content = "\n".join(selected)
     return {
         "workspace": workspace,
         "path": path,
         "sha256": digest,
         "size": size,
-        "truncated": len(text) > max_chars,
-        "content": _clip(text, max_chars),
+        "start_line": start_line,
+        "end_line": start_line + len(selected) - 1 if selected else start_line - 1,
+        "total_lines": len(lines),
+        "content": _clip(content, 16000),
+    }
+
+
+def work_search_text(
+    workspace: str,
+    query: str,
+    path: str = ".",
+    max_results: int = 30,
+) -> dict[str, Any]:
+    _, root = _workspace(workspace)
+    base = _safe_path(root, path, must_exist=True, allow_root=True)
+    if not base.is_dir():
+        raise NotADirectoryError(path)
+    needle = str(query or "").strip()
+    if not needle:
+        raise ValueError("query is required")
+    max_results = max(1, min(int(max_results), 60))
+    results = []
+    scanned = 0
+    skip_dirs = {".git", "__pycache__", "node_modules", ".gradle", ".venv", "venv", "build", "dist"}
+
+    for current_root, dirs, files in os.walk(base, followlinks=False):
+        root_path = Path(current_root)
+        dirs[:] = [
+            name for name in dirs
+            if name not in skip_dirs
+            and not (root_path / name).is_symlink()
+            and _deny_reason((root_path / name).relative_to(root)) is None
+        ]
+        for name in files:
+            if len(results) >= max_results or scanned >= 2500:
+                break
+            file_path = root_path / name
+            if file_path.is_symlink():
+                continue
+            rel = file_path.relative_to(root)
+            if _deny_reason(rel) is not None:
+                continue
+            try:
+                if not file_path.is_file() or file_path.stat().st_size > 1024 * 1024:
+                    continue
+                raw = file_path.read_bytes()
+                if b"\x00" in raw[:4096]:
+                    continue
+                scanned += 1
+                for line_no, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), start=1):
+                    if needle.casefold() in line.casefold():
+                        results.append({
+                            "path": str(rel),
+                            "line": line_no,
+                            "text": line[:500],
+                        })
+                        if len(results) >= max_results:
+                            break
+            except (OSError, PermissionError):
+                continue
+        if len(results) >= max_results or scanned >= 2500:
+            break
+
+    return {
+        "workspace": workspace,
+        "path": path,
+        "query": needle,
+        "results": results,
+        "scanned_files": scanned,
     }
 
 
@@ -363,6 +439,70 @@ def work_write_file(
     }
 
 
+
+def work_replace_text(
+    workspace: str,
+    path: str,
+    old_text: str,
+    new_text: str,
+    expected_sha256: str,
+) -> dict[str, Any]:
+    _, root = _workspace(workspace)
+    branch = _branch(root)
+    if not branch.startswith("ai/"):
+        raise PermissionError("Writes require an isolated ai/... branch")
+
+    local = _safe_path(root, path, must_exist=True)
+    if local.is_symlink() or not local.is_file():
+        raise PermissionError("Only regular text files can be edited")
+
+    raw = local.read_bytes()
+    if len(raw) > MAX_FILE_BYTES:
+        raise ValueError(f"File exceeds WORK write limit ({len(raw)} > {MAX_FILE_BYTES} bytes)")
+    if b"\x00" in raw[:4096]:
+        raise ValueError("Binary files are not editable in WORK mode")
+
+    current_sha = hashlib.sha256(raw).hexdigest()
+    if not expected_sha256 or expected_sha256 != current_sha:
+        raise RuntimeError("File changed since it was read; sha256 mismatch")
+
+    old_text = str(old_text)
+    new_text = str(new_text)
+    if not old_text:
+        raise ValueError("old_text must not be empty")
+    text = raw.decode("utf-8")
+    count = text.count(old_text)
+    if count != 1:
+        raise RuntimeError(f"old_text must match exactly once; matches={count}")
+
+    updated = text.replace(old_text, new_text, 1)
+    encoded = updated.encode("utf-8")
+    if len(encoded) > MAX_FILE_BYTES:
+        raise ValueError(f"Updated file exceeds WORK write limit ({len(encoded)} > {MAX_FILE_BYTES} bytes)")
+
+    old_mode = stat.S_IMODE(local.stat().st_mode)
+    fd, temp_name = tempfile.mkstemp(prefix=".server-ai-work-", dir=str(local.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, old_mode)
+        os.replace(temp_name, local)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+    return {
+        "workspace": workspace,
+        "path": path,
+        "branch": branch,
+        "replacements": 1,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "size": len(encoded),
+    }
+
+
 def work_diff(workspace: str, max_chars: int = 12000) -> dict[str, Any]:
     _, root = _workspace(workspace)
     max_chars = max(1000, min(int(max_chars), MAX_RESULT_CHARS))
@@ -431,8 +571,10 @@ ACTIONS = {
     "work_status": work_status,
     "work_list_files": work_list_files,
     "work_read_file": work_read_file,
+    "work_search_text": work_search_text,
     "work_create_branch": work_create_branch,
     "work_write_file": work_write_file,
+    "work_replace_text": work_replace_text,
     "work_diff": work_diff,
     "work_check": work_check,
 }
