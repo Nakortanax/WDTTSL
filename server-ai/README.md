@@ -839,3 +839,33 @@ Known non-blocking quality limitations:
 - this stage does not add arbitrary browser execution, shell access, or write/admin capabilities.
 
 Recommended next stage: controlled WORK capabilities for repository/file edits and tests, with allowlisted paths, Git branch/diff workflow, and explicit approval gates for destructive or administrative actions.
+
+
+## Stage 4 WEB research FULLY VERIFIED — 2026-10-06
+
+Final live fail-closed verification passed.
+
+Observed on the live server:
+- explicit WEB request planned 3 focused queries;
+- exactly one deterministic `web_research` call executed;
+- tool evidence size was 2360 characters, below the configured budget;
+- no READ fallback occurred;
+- the evidence-only verifier returned `verification_pass result=accepted`;
+- accepted citations were limited to fetched evidence sources `S1`, `S2`, `S3`;
+- the final Telegram answer used matching source IDs and an automatic source list;
+- exact technical version text such as `v1.12.0` was preserved;
+- unsupported broad absence claims were phrased conservatively;
+- Qwen stayed on `100% GPU` with context 8192.
+
+The WEB subsystem is now considered production-ready for bounded read-only research:
+- SearXNG search;
+- multi-query planning;
+- relevance/source ranking;
+- safe public-page fetching with SSRF protection;
+- primary-source extraction;
+- evidence-only synthesis;
+- per-claim source IDs;
+- verifier pass;
+- fail-closed behavior on invalid citations or rejected verification.
+
+Known limitations are quality/capacity rather than trust-boundary failures: a 4B model can still summarize awkwardly, and very deep research may need larger evidence budgets or a larger local model.
