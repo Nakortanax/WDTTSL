@@ -186,12 +186,24 @@ def _dirty_entries(root: Path) -> list[str]:
 def work_status(workspace: str) -> dict[str, Any]:
     data, root = _workspace(workspace)
     head = _require_ok(_git(root, ["rev-parse", "--short=12", "HEAD"]), "git rev-parse")["stdout"].strip()
+    base_ref = str(data.get("base_ref") or "").strip()
+    base_head = ""
+    behind_base = False
+    if base_ref:
+        base_head = _require_ok(
+            _git(root, ["rev-parse", "--short=12", base_ref]),
+            "git rev-parse base_ref",
+        )["stdout"].strip()
+        behind_base = head != base_head
     entries = _dirty_entries(root)
     checks = data.get("checks") or ["diff-check", "server-ai-python"]
     return {
         "workspace": workspace,
         "worktree": str(root),
         "source_repo": str(data.get("source_repo") or ""),
+        "base_ref": base_ref,
+        "base_head": base_head,
+        "behind_base": behind_base,
         "branch": _branch(root),
         "head": head,
         "dirty": bool(entries),
@@ -358,7 +370,7 @@ def _validate_branch_name(branch: str) -> str:
 
 
 def work_create_branch(workspace: str, branch: str) -> dict[str, Any]:
-    _, root = _workspace(workspace)
+    data, root = _workspace(workspace)
     branch = _validate_branch_name(branch)
     dirty = _dirty_entries(root)
     if dirty:
@@ -366,10 +378,20 @@ def work_create_branch(workspace: str, branch: str) -> dict[str, Any]:
     exists = _git(root, ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"])
     if exists["returncode"] == 0:
         raise FileExistsError(f"Branch already exists: {branch}")
-    result = _require_ok(_git(root, ["switch", "-c", branch]), "git switch -c")
+
+    base_ref = str(data.get("base_ref") or "").strip()
+    if not base_ref:
+        raise RuntimeError("Workspace has no configured base_ref")
+
+    _require_ok(_git(root, ["rev-parse", "--verify", base_ref]), "git verify base_ref")
+    result = _require_ok(
+        _git(root, ["switch", "-c", branch, base_ref]),
+        "git switch -c from base_ref",
+    )
     return {
         "workspace": workspace,
         "branch": branch,
+        "base_ref": base_ref,
         "head": _require_ok(_git(root, ["rev-parse", "--short=12", "HEAD"]), "git rev-parse")["stdout"].strip(),
         "message": result["stderr"].strip() or result["stdout"].strip(),
     }
