@@ -350,6 +350,26 @@ def work_search_text(
     }
 
 
+def _validate_branch_namespace(root: Path, branch: str) -> None:
+    namespace = branch.split("/", 1)[0]
+    common = _require_ok(
+        _git(root, ["rev-parse", "--git-common-dir"]),
+        "git rev-parse --git-common-dir",
+    )["stdout"].strip()
+    common_dir = Path(common)
+    if not common_dir.is_absolute():
+        common_dir = (root / common_dir).resolve()
+    namespace_dir = common_dir / "refs" / "heads" / namespace
+    if namespace_dir.exists():
+        if not namespace_dir.is_dir():
+            raise RuntimeError(f"Branch namespace path is not a directory: {namespace_dir}")
+        mode = stat.S_IMODE(namespace_dir.stat().st_mode)
+        if not os.access(namespace_dir, os.W_OK | os.X_OK):
+            raise RuntimeError(
+                f"Branch namespace is not writable/traversable: {namespace_dir} mode={mode:04o}"
+            )
+
+
 def _validate_branch_name(branch: str) -> str:
     branch = str(branch or "").strip().lower()
     if not BRANCH_RE.fullmatch(branch):
@@ -372,6 +392,7 @@ def _validate_branch_name(branch: str) -> str:
 def work_create_branch(workspace: str, branch: str) -> dict[str, Any]:
     data, root = _workspace(workspace)
     branch = _validate_branch_name(branch)
+    _validate_branch_namespace(root, branch)
     dirty = _dirty_entries(root)
     if dirty:
         raise RuntimeError("Worktree has uncommitted changes; branch creation is blocked")
