@@ -1043,3 +1043,26 @@ A read-only inspection after the first autonomous WORK attempt found an inconsis
 Because the changes appear in the index rather than the working-tree diff, this is not yet treated as a successful WORK edit. No reset/clean/checkout should be performed until the index/HEAD/worktree relationship and the result of the attempted `work_create_branch` are inspected.
 
 Next diagnostics are read-only: inspect porcelain v2 branch state, `git diff --cached`, local `ai/work-smoke-test` ref existence/target, linked-worktree metadata, and WORK/WORK-BROKER logs for the failed branch/edit calls.
+
+
+## Stage 5 branch-creation failure trace captured — 2026-10-06
+
+Live logs clarified the first autonomous WORK failure sequence.
+
+Agent trace showed:
+- fresh deterministic `work_status`;
+- `work_create_branch(ai/work-smoke-test)` attempted and returned an error-sized result;
+- subsequent `work_status`, search and README reads succeeded;
+- repeated `work_create_branch` attempts failed;
+- `work_replace_text` and `work_write_file` were then rejected because the worktree never became attached to an `ai/...` branch;
+- the model continued with unrelated listing/reads and eventually exhausted its tool-round budget.
+
+Host broker logs confirm the same:
+- first branch creation at 06:18:39 failed with `RuntimeError`;
+- later branch creation attempts also failed with `RuntimeError`;
+- edit attempts failed with `PermissionError`;
+- read-only operations continued to work normally.
+
+This confirms the primary blocker is branch creation, not the file-edit guard. The staged/index state seen afterwards may be a partial side effect of the failed Git switch, but the exact Git error text is still required before any cleanup or recovery action.
+
+Do not reset, clean, switch or rewrite the isolated worktree yet. Next step remains read-only Git diagnostics: porcelain-v2 branch state, cached diff, refs for `server-ai-agent` and `ai/work-smoke-test`, and linked-worktree metadata.
