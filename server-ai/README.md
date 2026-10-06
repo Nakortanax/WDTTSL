@@ -999,3 +999,30 @@ Observed:
 This verifies that stale detached state is detected, writes are blocked before creation of an isolated `ai/...` branch, and the deployment checkout remains untouched.
 
 Next live gate: enable `AGENT_WORK_TOOLS=true`, rebuild only the agent, verify `work_tools:true` in health, verify WORK socket access from inside the agent container, and then run the first autonomous controlled edit in the isolated worktree.
+
+
+## Stage 5 first autonomous WORK run — orchestration reached edit path, round-limit issue found — 2026-10-06
+
+The first Telegram autonomous WORK smoke request reached the controlled development path but did not finish verification before the model tool-round limit.
+
+Observed tool trace from the user-visible answer:
+- `work_status(wdttsl)`;
+- `work_create_branch(wdttsl, ai/work-smoke-test)`;
+- workspace search/read operations;
+- attempts to edit `server-ai/README.md`;
+- later unrelated discovery calls before diff/check completion;
+- final response: tool-call limit reached.
+
+This confirms that the agent can autonomously enter WORK mode, create an `ai/...` branch and invoke the isolated broker, but the 4B model can wander and spend too many planning rounds.
+
+Hardening prepared after this live result:
+- `work_write_file` now creates NEW files only and refuses replacement of existing files, eliminating the risk of truncating a large file after reading only a focused range;
+- existing files must be edited with compare-and-swap protected `work_replace_text` or the new `work_insert_text`;
+- `work_insert_text` inserts before/after one exact anchor and requires the sha256 returned by `work_read_file`;
+- the WORK prompt tells the model to prefer `work_insert_text` for small additions and stop exploring unrelated files after a successful edit;
+- WORK planning remains bounded but is raised from 10 to 14 rounds;
+- a successful file mutation is now tracked separately from branch creation or failed write attempts;
+- before accepting a successful WORK answer, the application deterministically runs `work_diff`, `diff-check` and `server-ai-python`;
+- if the model exhausts its planning rounds after a successful edit, the application can recover by running those mandatory postchecks itself and returning the resulting diff/status instead of discarding the completed edit.
+
+This hardening is committed but not yet live-verified. Before retrying the autonomous task, inspect the current isolated `ai/work-smoke-test` worktree because the first run may already have left a partial README modification.
