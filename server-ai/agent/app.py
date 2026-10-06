@@ -628,6 +628,51 @@ async def ask_model(user_text: str, source: str) -> str:
 
         try:
             async with httpx.AsyncClient(timeout=240.0) as client:
+                if require_work:
+                    arguments = {"workspace": "wdttsl"}
+                    started = time.monotonic()
+                    print("[WORK] selected=work_status reason=explicit_work_request", flush=True)
+                    result = await asyncio.to_thread(execute_work_tool, "work_status", arguments)
+                    elapsed = time.monotonic() - started
+                    tool_content = _compact_tool_content(result)
+                    tool_trace.append("work_status(wdttsl)")
+                    work_used = True
+                    grounded_mode = True
+                    grounded_messages.extend(
+                        [
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "work_status",
+                                            "arguments": arguments,
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "role": "tool",
+                                "tool_name": "work_status",
+                                "content": tool_content,
+                            },
+                            {
+                                "role": "user",
+                                "content": (
+                                    "WORK-режим активен для workspace 'wdttsl'. Работай только через WORK-инструменты. "
+                                    "Не трогай deployment checkout. Если нужно изменить существующий файл, сначала "
+                                    "найди и прочитай нужный фрагмент, затем используй sha256 для записи/замены. "
+                                    "После правок обязательно покажи diff и запусти разрешённые проверки."
+                                ),
+                            },
+                        ]
+                    )
+                    print(
+                        f"[WORK] tool=work_status elapsed={elapsed:.2f}s result_chars={len(tool_content)}",
+                        flush=True,
+                    )
+
                 if require_web:
                     planned_queries = await _plan_web_queries(client, text)
                     arguments = {
