@@ -1026,3 +1026,20 @@ Hardening prepared after this live result:
 - if the model exhausts its planning rounds after a successful edit, the application can recover by running those mandatory postchecks itself and returning the resulting diff/status instead of discarding the completed edit.
 
 This hardening is committed but not yet live-verified. Before retrying the autonomous task, inspect the current isolated `ai/work-smoke-test` worktree because the first run may already have left a partial README modification.
+
+
+## Stage 5 first WORK run left an inconsistent isolated worktree — diagnostic checkpoint — 2026-10-06
+
+A read-only inspection after the first autonomous WORK attempt found an inconsistent isolated worktree state:
+- `git branch --show-current` in `/var/lib/server-ai/workspaces/wdttsl` returned empty, so the worktree is currently detached rather than on the requested `ai/work-smoke-test` branch;
+- `git status --short` reported staged/index-side changes:
+  - `A  .gitignore`
+  - `M  server-ai/README.md`
+  - `M  server-ai/work-broker/work_broker.py`
+- plain `git diff` and `git diff --check` showed no unstaged diff;
+- the requested smoke-test line was not present in `server-ai/README.md`;
+- the deployment checkout remained on `server-ai-agent` and clean.
+
+Because the changes appear in the index rather than the working-tree diff, this is not yet treated as a successful WORK edit. No reset/clean/checkout should be performed until the index/HEAD/worktree relationship and the result of the attempted `work_create_branch` are inspected.
+
+Next diagnostics are read-only: inspect porcelain v2 branch state, `git diff --cached`, local `ai/work-smoke-test` ref existence/target, linked-worktree metadata, and WORK/WORK-BROKER logs for the failed branch/edit calls.
