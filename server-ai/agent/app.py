@@ -919,7 +919,14 @@ async def ask_model(user_text: str, source: str) -> str:
                         arguments = {}
                         try:
                             arguments = _normalize_tool_arguments(function.get("arguments"))
-                            if name in WEB_TOOL_NAMES:
+                            if name in WORK_TOOL_NAMES:
+                                print(f"[WORK] tool={name} argument_keys={sorted(arguments.keys())}", flush=True)
+                                if name in {"work_create_branch", "work_write_file", "work_replace_text"}:
+                                    work_change_attempted = True
+                                result = await asyncio.to_thread(execute_work_tool, name, arguments)
+                                work_used = True
+                                prefix = "[WORK]"
+                            elif name in WEB_TOOL_NAMES:
                                 print(f"[WEB] tool={name} argument_keys={sorted(arguments.keys())}", flush=True)
                                 result = await asyncio.to_thread(execute_web_tool, name, arguments)
                                 web_used = True
@@ -939,7 +946,12 @@ async def ask_model(user_text: str, source: str) -> str:
                                 prefix = "[READ]"
                         except Exception as exc:
                             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-                            prefix = "[WEB]" if name in WEB_TOOL_NAMES else "[READ]"
+                            if name in WORK_TOOL_NAMES:
+                                prefix = "[WORK]"
+                            elif name in WEB_TOOL_NAMES:
+                                prefix = "[WEB]"
+                            else:
+                                prefix = "[READ]"
 
                         elapsed = time.monotonic() - started
                         tool_content = _compact_tool_content(result)
