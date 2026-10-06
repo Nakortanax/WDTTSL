@@ -43,6 +43,12 @@ echo "socket      : ${SOCKET_PATH}"
 install -d -m 0755 -o root -g root "${LIB_DIR}" "${CONFIG_DIR}"
 install -d -m 0755 -o "${RUN_USER}" -g "${RUN_GROUP}" "${WORKTREE_ROOT}" "${RUNTIME_DIR}"
 
+# Pre-create the ai/ ref namespace with directory execute bits.
+# A directory without +x cannot be traversed, so Git cannot create refs/heads/ai/<branch>
+# and a failed switch can leave a linked worktree's index partially updated.
+AI_REF_DIR="${REPO_ROOT}/.git/refs/heads/ai"
+install -d -m 0770 -o "${RUN_USER}" -g "${RUN_GROUP}" "${AI_REF_DIR}"
+
 if [[ ! -e "${WORKTREE_DIR}/.git" ]]; then
   if [[ -e "${WORKTREE_DIR}" ]] && [[ -n "$(find "${WORKTREE_DIR}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
     echo "Refusing to reuse non-empty non-worktree directory: ${WORKTREE_DIR}" >&2
