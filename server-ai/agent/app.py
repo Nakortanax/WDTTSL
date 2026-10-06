@@ -1100,7 +1100,12 @@ async def telegram_loop() -> None:
                     state = "OK" if await ollama_ok() else "ERROR"
                     tools_state = "ON" if READ_TOOLS_ENABLED and Path("/run/server-ai/read.sock").exists() else "OFF"
                     web_state = "ON" if WEB_TOOLS_ENABLED and await searxng_ok() else "OFF"
-                    await telegram_send(chat_id, f"Ollama: {state}\nМодель: {MODEL}\nREAD tools: {tools_state}\nWEB tools: {web_state}\nGrounding: STRICT")
+                    work_state = "ON" if WORK_TOOLS_ENABLED and WORK_SOCKET_PATH.exists() else "OFF"
+                    await telegram_send(
+                        chat_id,
+                        f"Ollama: {state}\nМодель: {MODEL}\nREAD tools: {tools_state}\n"
+                        f"WEB tools: {web_state}\nWORK tools: {work_state}\nGrounding: STRICT",
+                    )
                     continue
                 if text == "/new":
                     clear_messages()
@@ -1148,6 +1153,7 @@ async def health() -> dict:
         "read_enforcement": True,
         "web_tools": WEB_TOOLS_ENABLED,
         "searxng": await searxng_ok(),
+        "work_tools": WORK_TOOLS_ENABLED and WORK_SOCKET_PATH.exists(),
     }
 
 
