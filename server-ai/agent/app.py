@@ -954,6 +954,22 @@ async def ask_model(user_text: str, source: str) -> str:
                                 print("[WEB] verification_block final=1", flush=True)
                                 break
                             candidate = verified
+                        if require_work and work_edit_succeeded:
+                            postcheck = await _run_work_postchecks(tool_trace)
+                            if not postcheck["ok"]:
+                                answer = (
+                                    "Изменение в WORK-workspace выполнено, но обязательная автоматическая "
+                                    "проверка diff/tests не прошла. Deployment checkout не изменён."
+                                )
+                                print("[WORK] postcheck_block final=1", flush=True)
+                                break
+                            candidate = candidate.rstrip()
+                            candidate += (
+                                f"\n\nWORK автопроверка: OK. Ветка: {postcheck['branch'] or 'не определена'}. "
+                                "diff-check: OK; server-ai-python: OK."
+                            )
+                            if postcheck["diff"]:
+                                candidate += "\n\nDiff:\n" + postcheck["diff"]
                         answer = candidate
                         break
 
