@@ -1054,7 +1054,26 @@ async def ask_model(user_text: str, source: str) -> str:
                                 }
                             )
                 else:
-                    answer = "Достигнут лимит вызовов инструментов за один запрос. Уточни задачу или сузь область поиска."
+                    if require_work and work_edit_succeeded:
+                        postcheck = await _run_work_postchecks(tool_trace)
+                        if postcheck["ok"]:
+                            answer = (
+                                "WORK-изменение выполнено. Модель исчерпала лимит планирования, поэтому приложение "
+                                "автоматически завершило обязательную проверку. "
+                                f"Ветка: {postcheck['branch'] or 'не определена'}. "
+                                "diff-check: OK; server-ai-python: OK."
+                            )
+                            if postcheck["diff"]:
+                                answer += "\n\nDiff:\n" + postcheck["diff"]
+                            print("[WORK] tool_round_limit recovered_by_postcheck=1", flush=True)
+                        else:
+                            answer = (
+                                "WORK-изменение было выполнено, но после достижения лимита автоматическая "
+                                "проверка diff/tests не прошла. Deployment checkout не изменён."
+                            )
+                            print("[WORK] tool_round_limit postcheck_failed=1", flush=True)
+                    else:
+                        answer = "Достигнут лимит вызовов инструментов за один запрос. Уточни задачу или сузь область поиска."
 
                 if not answer:
                     answer = "Модель вернула пустой итоговый ответ после проверки. Повтори запрос или уточни задачу."
