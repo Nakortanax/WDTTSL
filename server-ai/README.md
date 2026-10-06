@@ -1066,3 +1066,24 @@ Host broker logs confirm the same:
 This confirms the primary blocker is branch creation, not the file-edit guard. The staged/index state seen afterwards may be a partial side effect of the failed Git switch, but the exact Git error text is still required before any cleanup or recovery action.
 
 Do not reset, clean, switch or rewrite the isolated worktree yet. Next step remains read-only Git diagnostics: porcelain-v2 branch state, cached diff, refs for `server-ai-agent` and `ai/work-smoke-test`, and linked-worktree metadata.
+
+
+## Stage 5 failed switch left index/worktree at base content while HEAD stayed detached — 2026-10-06
+
+The read-only Git inspection resolved the shape of the failed branch switch.
+
+Observed:
+- isolated worktree HEAD is still detached at `2b151578fc6595960b59d2ed2654fcf1ca8e4bc3`;
+- local `server-ai-agent` points to `9969946eefee84e3dc18fe5afa65ab69485c2e03`;
+- `ai/work-smoke-test` does not exist as a valid local ref;
+- the index contains exactly the files changed between the old detached HEAD and the newer base:
+  - `.gitignore` added;
+  - `server-ai/README.md` updated;
+  - `server-ai/work-broker/work_broker.py` updated;
+- plain working-tree diff is empty, while `git diff --cached` shows those base-branch changes.
+
+This strongly indicates that the failed `git switch -c ai/work-smoke-test server-ai-agent` updated the isolated worktree/index toward the requested base commit, then failed before completing branch-ref/HEAD attachment. The requested autonomous smoke-test line was never inserted.
+
+The deployment checkout remained clean and on `server-ai-agent`.
+
+Before any recovery mutation, inspect possible ref namespace conflicts and linked-worktree metadata. The broker has also been hardened to log a bounded sanitized exception message, not only the exception type, so any subsequent branch-creation failure exposes the actual Git error.
