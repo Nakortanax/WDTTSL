@@ -570,6 +570,51 @@ async def _verify_web_synthesis(
     return None
 
 
+async def _run_work_postchecks(tool_trace: list[str]) -> dict:
+    workspace = "wdttsl"
+    checks = [
+        ("work_diff", {"workspace": workspace, "max_chars": 12000}),
+        ("work_check", {"workspace": workspace, "check": "diff-check"}),
+        ("work_check", {"workspace": workspace, "check": "server-ai-python"}),
+    ]
+    collected: dict[str, dict] = {}
+    all_ok = True
+
+    for name, arguments in checks:
+        started = time.monotonic()
+        result = await asyncio.to_thread(execute_work_tool, name, arguments)
+        elapsed = time.monotonic() - started
+        label = _tool_label(name, arguments)
+        tool_trace.append(label)
+        print(
+            f"[WORK] auto_postcheck tool={name} elapsed={elapsed:.2f}s ok={bool(result.get('ok'))}",
+            flush=True,
+        )
+        collected[label] = result
+        if not result.get("ok"):
+            all_ok = False
+            continue
+        payload = result.get("result") if isinstance(result, dict) else None
+        if name == "work_check":
+            if not isinstance(payload, dict) or not payload.get("ok"):
+                all_ok = False
+        elif name == "work_diff":
+            if not isinstance(payload, dict) or not payload.get("diff_check_ok"):
+                all_ok = False
+
+    diff_result = collected.get("work_diff(wdttsl)", {})
+    diff_payload = diff_result.get("result") if isinstance(diff_result, dict) else {}
+    diff_text = str(diff_payload.get("diff") or "") if isinstance(diff_payload, dict) else ""
+    branch_name = str(diff_payload.get("branch") or "") if isinstance(diff_payload, dict) else ""
+
+    return {
+        "ok": all_ok,
+        "branch": branch_name,
+        "diff": diff_text,
+        "results": collected,
+    }
+
+
 async def ask_model(user_text: str, source: str) -> str:
     text = user_text.strip()
     if not text:
