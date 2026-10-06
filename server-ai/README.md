@@ -1087,3 +1087,21 @@ This strongly indicates that the failed `git switch -c ai/work-smoke-test server
 The deployment checkout remained clean and on `server-ai-agent`.
 
 Before any recovery mutation, inspect possible ref namespace conflicts and linked-worktree metadata. The broker has also been hardened to log a bounded sanitized exception message, not only the exception type, so any subsequent branch-creation failure exposes the actual Git error.
+
+
+## Stage 5 root cause confirmed — branch namespace permissions — 2026-10-06
+
+Live diagnostics found the cause of the failed WORK branch creation.
+
+Observed:
+- there is no existing branch named `ai`;
+- the local branch namespace directory for `ai/...` exists with mode `0660`;
+- because the directory has no execute/search bit, Git cannot create a nested `ai/work-smoke-test` branch ref;
+- the failed switch left the linked worktree detached while its index had already moved toward the configured base content.
+
+Hardening:
+- the WORK installer now ensures the `ai` branch namespace directory is owned by the repository user/group with mode `0770`;
+- the broker now validates that the branch namespace is writable and traversable before invoking branch creation;
+- broker errors include a bounded exception message for future diagnosis.
+
+The deployment checkout remained clean. The isolated worktree still requires one scoped recovery to realign its detached HEAD/index before another autonomous WORK test.
