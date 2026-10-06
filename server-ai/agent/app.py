@@ -587,16 +587,25 @@ async def ask_model(user_text: str, source: str) -> str:
         grounded_mode = False
         read_used = False
         web_used = False
+        work_used = False
+        work_write_attempted = False
         answer = ""
-        explicit_web = _requires_web(text)
+        explicit_work = _requires_work(text)
+        explicit_web = _requires_web(text) and not explicit_work
+        require_work = explicit_work
         require_web = explicit_web
-        require_read = _requires_read(text) and not explicit_web
+        require_read = _requires_read(text) and not explicit_work and not explicit_web
         retry_read = False
         retry_web = False
         retry_web_citations = False
+        retry_work = False
 
         enabled_tools = []
-        if require_web:
+        if require_work:
+            # Mutation-capable tools are exposed only when the user's request is
+            # explicitly classified as a code/project edit task.
+            enabled_tools = list(WORK_TOOL_SCHEMAS)
+        elif require_web:
             # For an explicit internet-research request, expose only the aggregate
             # research tool. This prevents a small local model from wandering into
             # unrelated READ tools or repeatedly chaining equivalent searches.
@@ -608,6 +617,8 @@ async def ask_model(user_text: str, source: str) -> str:
         elif require_read:
             enabled_tools = list(TOOL_SCHEMAS)
         else:
+            # Never expose WORK tools opportunistically: a normal chat must not
+            # gain write capability without explicit edit intent.
             if READ_TOOLS_ENABLED:
                 enabled_tools.extend(TOOL_SCHEMAS)
             if WEB_TOOLS_ENABLED:
