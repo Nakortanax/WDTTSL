@@ -869,3 +869,71 @@ The WEB subsystem is now considered production-ready for bounded read-only resea
 - fail-closed behavior on invalid citations or rejected verification.
 
 Known limitations are quality/capacity rather than trust-boundary failures: a 4B model can still summarize awkwardly, and very deep research may need larger evidence budgets or a larger local model.
+
+
+## Stage 5 WORK — controlled isolated development — PREPARED, NOT LIVE-VERIFIED — 2026-10-06
+
+Goal: let the local Qwen inspect and edit approved source code safely without giving the model a host shell, root privileges, the Docker socket, or direct write access to the deployment checkout.
+
+Initial trust boundary:
+- WORK is disabled by default with `AGENT_WORK_TOOLS=false`;
+- only explicit code/project edit intent can expose mutation-capable WORK tools;
+- normal chat, READ and WEB requests never receive WORK schemas opportunistically;
+- the first approved workspace is `wdttsl` only;
+- the deployment checkout remains `~/WDTTSL`;
+- WORK operates in a separate linked Git worktree at `/var/lib/server-ai/workspaces/wdttsl`;
+- the host broker runs as the non-root owner of the repository;
+- the agent container receives only a Unix socket, not a writable host filesystem mount.
+
+Host broker:
+- source: `server-ai/work-broker/work_broker.py`;
+- installer: `server-ai/install-work-broker.sh`;
+- socket: `/run/server-ai/work/work.sock`;
+- config: `/etc/server-ai/workspaces.json`;
+- systemd service: `server-ai-work.service`.
+
+Exposed WORK operations:
+- `work_status` — branch/HEAD/dirty state and allowed checks;
+- `work_list_files` — bounded workspace listing;
+- `work_search_text` — bounded text search;
+- `work_read_file` — focused line-range read with sha256;
+- `work_create_branch` — new branches must use the `ai/` prefix and require a clean worktree;
+- `work_write_file` — create/replace text files; existing files require the previously observed sha256;
+- `work_replace_text` — exact one-occurrence replacement with sha256 compare-and-swap protection;
+- `work_diff` — bounded diff plus `git diff --check`;
+- `work_check` — allowlisted checks only.
+
+Initial allowlisted checks:
+- `diff-check`;
+- `server-ai-python` — syntax-compiles the Server AI Python sources without running arbitrary project commands.
+
+Explicitly unavailable in this stage:
+- arbitrary shell commands;
+- arbitrary subprocess commands supplied by Qwen;
+- commit or push;
+- delete/rename/reset/clean;
+- Docker control;
+- systemd control;
+- package management;
+- root/admin operations;
+- access to `.git` internals, `.env`, private keys or credential-like paths.
+
+Additional protections:
+- writes are refused unless the isolated worktree is on an `ai/...` branch;
+- existing-file writes use sha256 compare-and-swap to prevent stale overwrites;
+- symlink paths are refused;
+- file/request/output sizes are bounded;
+- Git hooks are disabled for broker Git commands;
+- broker network access is restricted to `AF_UNIX` by systemd;
+- the systemd service gets explicit write access only to the isolated worktree, the source repository Git metadata required by linked worktrees, and its runtime socket directory;
+- installer updates avoid recursive deletion and skip `systemctl daemon-reload` when the unit file is unchanged.
+
+Agent behavior:
+- explicit WORK tasks receive WORK tool precedence over READ/WEB;
+- the application performs a fresh `work_status(wdttsl)` before Qwen starts a WORK task;
+- up to 10 bounded tool rounds are available for multi-step edits;
+- Qwen is instructed to create an `ai/...` branch, locate/read the target, edit with sha256 protection, inspect the diff and run allowed checks;
+- if the model only describes a requested edit without attempting a controlled change, the answer is rejected once and retried;
+- Web and Telegram status expose WORK ON/OFF.
+
+Live verification is required before this stage is marked usable. Start with broker/status/security smoke tests before asking Qwen to edit any project file.
