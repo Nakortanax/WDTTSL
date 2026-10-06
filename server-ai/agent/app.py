@@ -31,6 +31,7 @@ QWEN_THINK = os.getenv("QWEN_THINK", "false").strip().lower() in {"1", "true", "
 READ_TOOLS_ENABLED = os.getenv("AGENT_READ_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
 WEB_TOOLS_ENABLED = os.getenv("AGENT_WEB_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
 WORK_TOOLS_ENABLED = os.getenv("AGENT_WORK_TOOLS", "false").strip().lower() in {"1", "true", "yes", "on"}
+WORK_SOCKET_PATH = Path(os.getenv("HOST_WORK_SOCKET", "/run/server-ai/work/work.sock"))
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://searxng:8080").rstrip("/")
 MAX_TOOL_ROUNDS = 4
 TOOL_RESULT_CHARS = max(1000, int(os.getenv("AGENT_TOOL_RESULT_CHARS", "3500")))
@@ -264,6 +265,16 @@ def _tool_label(name: str, arguments: dict) -> str:
         return f"{name}({arguments.get('path', '?')})"
     if name == "server_snapshot":
         return f"server_snapshot({arguments.get('section', '?')})"
+    if name in WORK_TOOL_NAMES:
+        workspace = arguments.get("workspace", "?")
+        detail = (
+            arguments.get("path")
+            or arguments.get("branch")
+            or arguments.get("check")
+            or ""
+        )
+        suffix = f", {detail}" if detail else ""
+        return f"{name}({workspace}{suffix})"
     return name
 
 
