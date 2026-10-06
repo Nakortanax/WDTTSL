@@ -838,27 +838,28 @@ async def ask_model(user_text: str, source: str) -> str:
                     tool_calls = message.get("tool_calls") or []
 
                     if not tool_calls:
-                        if require_work and not work_change_attempted:
+                        if require_work and not work_edit_succeeded:
                             if not retry_work:
                                 retry_work = True
                                 active_messages.append(
                                     {
                                         "role": "user",
                                         "content": (
-                                            "Пользователь просит изменить проект. Одного описания недостаточно. "
-                                            "Выполни задачу через WORK-инструменты: при необходимости создай ai/... ветку, "
-                                            "прочитай нужные файлы, внеси безопасное изменение, затем проверь diff/tests. "
-                                            "Если broker блокирует действие, вызови инструмент и сообщи реальную ошибку."
+                                            "Пользователь просит изменить проект. Одного описания или создания ветки "
+                                            "недостаточно. Внеси одно реальное контролируемое изменение через "
+                                            "work_replace_text/work_insert_text либо создай новый файл через work_write_file. "
+                                            "Не переходи к посторонним файлам. После успешного edit просто ответь: "
+                                            "приложение само выполнит diff и проверки."
                                         ),
                                     }
                                 )
-                                print("[WORK] rejected_no_change retry=1", flush=True)
+                                print("[WORK] rejected_no_edit retry=1", flush=True)
                                 continue
                             answer = (
-                                "WORK-задача не выполнена: модель не попыталась внести контролируемое изменение "
-                                "в изолированный workspace. Неподтверждённый ответ заблокирован."
+                                "WORK-задача не выполнена: не было успешного контролируемого изменения файла "
+                                "в изолированном workspace. Неподтверждённый ответ заблокирован."
                             )
-                            print("[WORK] rejected_no_change final=1", flush=True)
+                            print("[WORK] rejected_no_edit final=1", flush=True)
                             break
 
                         if require_read and not read_used:
