@@ -269,3 +269,10 @@ Previous evidence remains relevant:
 - NVIDIA GTX 1660 SUPER exposes UCSI/USB functions and logs `nvidia-gpu 0000:01:00.3: i2c timeout` / `ucsi_ccg ... -110`.
 
 Recommended operational mitigation: keep 7.0.0-34 as the known-good boot kernel until the 7.0.0-38 regression is understood or superseded by a fixed kernel. Do not remove 7.0.0-38 yet; retain it for comparison and rollback testing.
+
+
+## Warm reboot diagnostics: default kernel returned to 7.0.0-38 — 2026-10-07
+
+After the successful reboot test from `7.0.0-34-generic`, the machine booted normally and `uname -r` reported `7.0.0-38-generic`. This confirms the earlier GRUB test was truly one-shot and the persistent default still points to the normal first Ubuntu entry (currently 7.0.0-38).
+
+Operational plan: temporarily make `7.0.0-34-generic` the persistent GRUB default while retaining 7.0.0-38 installed for comparison. This avoids using the kernel that reproduces the warm-reboot failure without deleting it.
