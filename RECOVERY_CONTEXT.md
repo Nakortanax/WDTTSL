@@ -288,3 +288,15 @@ Important: do not treat the root cause as proven fixed yet. Earlier evidence sho
 - after the successful 7.0.0-34 test, the machine had returned to `7.0.0-38-generic` by the normal GRUB default.
 
 At this checkpoint it is not yet confirmed which kernel was active during the latest successful reboot, nor whether GRUB had already been changed to make 7.0.0-34 persistent. Verify `uname -r` and `GRUB_DEFAULT` before attributing the success to a specific change. A second normal reboot on the confirmed kernel is recommended before declaring the reboot issue resolved.
+
+
+## Warm reboot diagnostics: 7.0.0-38 also rebooted successfully — 2026-10-07
+
+New verified result:
+- after a normal reboot, the server is running `7.0.0-38-generic`;
+- `/etc/default/grub` still has `GRUB_DEFAULT=0`;
+- therefore the successful reboot was not caused by pinning 7.0.0-34 or changing the persistent GRUB default.
+
+This weakens the earlier hypothesis of a deterministic 7.0.0-38 kernel regression. The reboot failure now appears intermittent/state-dependent. Possible contributors include platform/firmware reset state or NVIDIA/GPU/container state, but the exact cause remains unproven.
+
+Do not change GRUB or remove 7.0.0-38 based on the earlier hypothesis. Keep the current default unchanged and verify reproducibility with additional normal reboots before declaring the issue resolved.
