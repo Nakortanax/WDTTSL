@@ -216,3 +216,18 @@ Current platform details from the same diagnostic capture:
 - media disk: WDC 500 GB NTFS at `/srv/media`.
 
 Interpretation: the evidence points away from Docker or a userspace shutdown service. The hang most likely occurs after userspace shutdown, during the kernel/firmware warm-reset transition or early firmware/POST path. Do not change BIOS/kernel parameters blindly. Next diagnostics should collect motherboard/BIOS identity, current kernel command line, EFI/ACPI/reboot-related kernel messages, then test alternative reboot mechanisms one at a time if needed.
+
+
+## Warm reboot diagnostics: board/firmware identified — 2026-10-07
+
+Further live diagnostics identified the platform:
+- motherboard: MSI B460M-A PRO (MS-7C88), revision 1.0;
+- firmware vendor: American Megatrends;
+- installed BIOS version: 1.60, dated 2020-11-30;
+- boot mode: UEFI;
+- kernel command line has no explicit `reboot=` override;
+- EFI boot order contains only Ubuntu via `\\EFI\\UBUNTU\\SHIMX64.EFI`;
+- GPU exposes four PCI functions: VGA, HDA audio, USB 3.1 host and USB Type-C UCSI controller;
+- boot log repeatedly shows `nvidia-gpu 0000:01:00.3: i2c timeout` and `ucsi_ccg ... -110` on the NVIDIA UCSI function.
+
+The evidence still points to the kernel/firmware warm-reset path rather than userspace shutdown. Before making persistent changes, compare behavior with another installed kernel if available. If the issue reproduces across kernels, test one alternative x86 reboot mechanism at a time (prefer a temporary kernel parameter such as `reboot=pci` first). BIOS update is also a strong candidate because the installed firmware is from 2020 and MSI has much newer firmware for this exact board, but firmware flashing should be treated as a separate deliberate maintenance step.
