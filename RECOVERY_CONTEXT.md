@@ -253,3 +253,19 @@ The GRUB one-shot kernel test worked:
 - `grub-editenv list` showed `next_entry=`, confirming the one-shot entry was consumed and the persistent default was not changed.
 
 Next test: issue a normal `sudo reboot` while running 7.0.0-34 and observe whether the machine returns without a hard reset. If it still hangs, that strongly argues against a regression specific to 7.0.0-38 and shifts focus to the firmware / platform reset path.
+
+
+## Warm reboot diagnostics: kernel 7.0.0-34 reboot SUCCESS — 2026-10-07
+
+Critical result:
+- server was confirmed running `7.0.0-34-generic`;
+- a normal `sudo reboot` issued from that kernel completed successfully without requiring a hard reset.
+
+This is strong evidence that the recurring warm-reboot failure is specific to, or triggered by, the newer `7.0.0-38-generic` kernel / its interaction with the platform, rather than a generic BIOS/UEFI inability to warm reboot.
+
+Previous evidence remains relevant:
+- normal shutdown under 7.0.0-38 reached `reboot.target` and stopped userspace cleanly, but the machine failed to return without a hard reset;
+- motherboard is MSI B460M-A PRO (MS-7C88), BIOS 1.60 (2020-11-30);
+- NVIDIA GTX 1660 SUPER exposes UCSI/USB functions and logs `nvidia-gpu 0000:01:00.3: i2c timeout` / `ucsi_ccg ... -110`.
+
+Recommended operational mitigation: keep 7.0.0-34 as the known-good boot kernel until the 7.0.0-38 regression is understood or superseded by a fixed kernel. Do not remove 7.0.0-38 yet; retain it for comparison and rollback testing.
