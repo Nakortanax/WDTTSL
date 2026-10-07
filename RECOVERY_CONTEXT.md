@@ -276,3 +276,15 @@ Recommended operational mitigation: keep 7.0.0-34 as the known-good boot kernel 
 After the successful reboot test from `7.0.0-34-generic`, the machine booted normally and `uname -r` reported `7.0.0-38-generic`. This confirms the earlier GRUB test was truly one-shot and the persistent default still points to the normal first Ubuntu entry (currently 7.0.0-38).
 
 Operational plan: temporarily make `7.0.0-34-generic` the persistent GRUB default while retaining 7.0.0-38 installed for comparison. This avoids using the kernel that reproduces the warm-reboot failure without deleting it.
+
+
+## Warm reboot diagnostics: subsequent reboot succeeded — 2026-10-07
+
+The user reported that a subsequent plain `sudo reboot` completed normally without requiring a hard reset.
+
+Important: do not treat the root cause as proven fixed yet. Earlier evidence showed:
+- reboot from `7.0.0-34-generic` succeeded;
+- reboot failures had occurred while running `7.0.0-38-generic`;
+- after the successful 7.0.0-34 test, the machine had returned to `7.0.0-38-generic` by the normal GRUB default.
+
+At this checkpoint it is not yet confirmed which kernel was active during the latest successful reboot, nor whether GRUB had already been changed to make 7.0.0-34 persistent. Verify `uname -r` and `GRUB_DEFAULT` before attributing the success to a specific change. A second normal reboot on the confirmed kernel is recommended before declaring the reboot issue resolved.
