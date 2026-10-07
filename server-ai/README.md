@@ -1140,3 +1140,26 @@ Live rollback progress verified:
 - only an untracked local `server-ai/` directory remains to be cleaned from disk.
 
 The `server-ai-agent` branch is retained in GitHub as an archive of the experiment. The production server should remain on `home-server-vpn`.
+
+
+## Server AI rollback FULLY VERIFIED — 2026-10-07
+
+The live server has been fully restored to the pre-Server-AI state.
+
+Verified on the server:
+- active WDTTSL branch is `home-server-vpn`;
+- HEAD is exactly `e9edaf261393fed0d48175ce5b08169ae2d9f176` (`Document resolved transient VPNSL outage`);
+- all `server-ai-*` containers are gone;
+- Server AI host data/config/runtime paths are absent:
+  - `/var/lib/server-ai`
+  - `/etc/server-ai`
+  - `/usr/local/lib/server-ai`
+  - `/run/server-ai`
+  - `~/WDTTSL/server-ai`
+- `server-ai-work.service` and `server-ai-read.service` are no longer present;
+- custom image `server-ai-agent:latest` was removed;
+- no failed systemd units remain;
+- NVIDIA driver/GPU remain healthy (`595.91.07`, CUDA `13.2`);
+- normal services remain running, including WeightDiaryBot, Homer/status, Glances and AdGuard Home.
+
+The experimental `server-ai-agent` Git branch is retained only as an archive. Production remains on `home-server-vpn`.
