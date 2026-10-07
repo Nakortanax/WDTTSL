@@ -1163,3 +1163,14 @@ Verified on the server:
 - normal services remain running, including WeightDiaryBot, Homer/status, Glances and AdGuard Home.
 
 The experimental `server-ai-agent` Git branch is retained only as an archive. Production remains on `home-server-vpn`.
+
+
+## Post-rollback model-storage verification — 2026-10-07
+
+Live verification after the Server AI rollback confirmed:
+- no Ollama containers remain;
+- `/var/lib/server-ai/ollama` is absent, so the downloaded Server AI Qwen model data is gone;
+- Docker image `ollama/ollama:latest` still exists locally as an unused runtime image;
+- one unused Server AI volume remains: `server-ai_searxng-cache`.
+
+The remaining Docker image is not the Qwen model itself; the model blobs were stored under the removed Server AI data directory.
