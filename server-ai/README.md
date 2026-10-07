@@ -1123,3 +1123,20 @@ Observed live:
 This verifies that the partial failed-switch state has been fully recovered without touching the deployment checkout.
 
 Next live gate: rebuild the agent with the hardened WORK orchestration, then rerun the autonomous `ai/work-smoke-test` edit and confirm branch creation, one controlled edit, automatic diff/check validation, clean deployment checkout, and GPU-backed inference.
+
+
+## Server AI rollback decision and pre-AI checkout verification — 2026-10-07
+
+The autonomous Server AI experiment is being retired from the live server.
+
+Reason: the local `qwen3.5:4b-q4_K_M` model repeatedly proved too unreliable for multi-step autonomous WORK orchestration, even though the broker safety boundaries themselves blocked unsafe writes.
+
+Live rollback progress verified:
+- all `server-ai-*` compose containers were stopped and removed;
+- the isolated WORK worktree was removed;
+- host WORK/READ broker services were disabled/stopped;
+- the main WDTTSL checkout was successfully switched away from `server-ai-agent`;
+- the live checkout is now exactly `home-server-vpn` at commit `e9edaf261393fed0d48175ce5b08169ae2d9f176`, the pre-Server-AI checkpoint;
+- only an untracked local `server-ai/` directory remains to be cleaned from disk.
+
+The `server-ai-agent` branch is retained in GitHub as an archive of the experiment. The production server should remain on `home-server-vpn`.
