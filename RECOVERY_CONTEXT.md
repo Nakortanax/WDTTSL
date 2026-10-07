@@ -231,3 +231,16 @@ Further live diagnostics identified the platform:
 - boot log repeatedly shows `nvidia-gpu 0000:01:00.3: i2c timeout` and `ucsi_ccg ... -110` on the NVIDIA UCSI function.
 
 The evidence still points to the kernel/firmware warm-reset path rather than userspace shutdown. Before making persistent changes, compare behavior with another installed kernel if available. If the issue reproduces across kernels, test one alternative x86 reboot mechanism at a time (prefer a temporary kernel parameter such as `reboot=pci` first). BIOS update is also a strong candidate because the installed firmware is from 2020 and MSI has much newer firmware for this exact board, but firmware flashing should be treated as a separate deliberate maintenance step.
+
+
+## Warm reboot diagnostics: available kernels / GRUB — 2026-10-07
+
+Live inspection of installed kernels and GRUB found:
+- dpkg database lists Linux images 7.0.0-31, 7.0.0-34 and 7.0.0-38;
+- actual bootable kernel/initrd files currently present in /boot are 7.0.0-34 and 7.0.0-38;
+- GRUB contains explicit menu entries for both 7.0.0-34 and 7.0.0-38;
+- current default is the normal first Ubuntu entry;
+- GRUB menu is hidden with timeout 0;
+- no custom kernel command-line parameters are configured.
+
+Because no pre-7.0 kernel is currently bootable, the safest next comparison is a one-time boot into 7.0.0-34, verify that kernel is actually running, then test a normal software reboot from 7.0.0-34. This can distinguish a 7.0.0-38 regression from a broader firmware/reset problem without changing the persistent default kernel.
