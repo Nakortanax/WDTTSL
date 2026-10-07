@@ -244,3 +244,12 @@ Live inspection of installed kernels and GRUB found:
 - no custom kernel command-line parameters are configured.
 
 Because no pre-7.0 kernel is currently bootable, the safest next comparison is a one-time boot into 7.0.0-34, verify that kernel is actually running, then test a normal software reboot from 7.0.0-34. This can distinguish a 7.0.0-38 regression from a broader firmware/reset problem without changing the persistent default kernel.
+
+
+## Warm reboot diagnostics: one-shot boot to 7.0.0-34 verified — 2026-10-07
+
+The GRUB one-shot kernel test worked:
+- after using `grub-reboot`, the server came up running `7.0.0-34-generic`;
+- `grub-editenv list` showed `next_entry=`, confirming the one-shot entry was consumed and the persistent default was not changed.
+
+Next test: issue a normal `sudo reboot` while running 7.0.0-34 and observe whether the machine returns without a hard reset. If it still hangs, that strongly argues against a regression specific to 7.0.0-38 and shifts focus to the firmware / platform reset path.
