@@ -193,3 +193,26 @@ When resuming work after lost chat memory:
 2. inspect the current server state before changing anything;
 3. compare live state to the verified production commit;
 4. save each newly confirmed milestone to GitHub.
+
+
+## Reboot failure diagnostics — 2026-10-07
+
+The server has a recurring warm-reboot failure: a normal software reboot performs an orderly shutdown, but the machine does not come back and requires a physical hard reset.
+
+Confirmed from the previous-boot journal:
+- systemd reached `shutdown.target`, `final.target`, and `reboot.target`;
+- `systemd-reboot.service` finished successfully;
+- `systemd-shutdown` synced filesystems/block devices and sent SIGTERM to remaining processes;
+- journald then stopped normally;
+- Docker/containerd and mounted filesystems had already shut down/unmounted cleanly;
+- no failed systemd units were present after the subsequent hard-reset boot.
+
+Current platform details from the same diagnostic capture:
+- firmware mode: UEFI;
+- kernel: `7.0.0-38-generic`;
+- NVIDIA driver: `595.91.07`, CUDA 13.2;
+- GPU: GTX 1660 SUPER;
+- root disk: SanDisk SATA SSD with EFI + /boot + LVM root;
+- media disk: WDC 500 GB NTFS at `/srv/media`.
+
+Interpretation: the evidence points away from Docker or a userspace shutdown service. The hang most likely occurs after userspace shutdown, during the kernel/firmware warm-reset transition or early firmware/POST path. Do not change BIOS/kernel parameters blindly. Next diagnostics should collect motherboard/BIOS identity, current kernel command line, EFI/ACPI/reboot-related kernel messages, then test alternative reboot mechanisms one at a time if needed.
