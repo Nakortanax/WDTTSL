@@ -14,3 +14,7 @@ Production Ubuntu server migration validated by user-supplied command output aft
 - No changes to production branch `home-server-vpn`.
 
 Do not publish Wi-Fi passwords or raw Netplan files. Check Keenetic DHCP reservation / UDP 46000 forwarding against the new Wi-Fi adapter after future router changes.
+
+## Final mobile VPN check after reboot
+
+On 2026-10-11 the user confirmed that VPNSL on the phone has working internet after the server reboot and Wi-Fi migration. This completes an external end-to-end functionality check in addition to prior server-side NAT and service checks. The confirmed working network setup requires no further immediate changes.
