@@ -74,7 +74,7 @@ jobs:
         working-directory: rust-server
         run: |
           set -euxo pipefail
-          ./build_linux.sh --no-tests
+          bash build_linux.sh --no-tests
           test -x dist/csqtt-linux-amd64
           test -x dist/csqtt-linux-arm64
           test -x dist/csqtt-linux-armv7
