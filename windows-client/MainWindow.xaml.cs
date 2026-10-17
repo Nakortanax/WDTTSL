@@ -400,6 +400,11 @@ public partial class MainWindow : Window
         Process.Start(new ProcessStartInfo("https://github.com/Nakortanax/WDTTSL") { UseShellExecute = true });
     }
 
+    private void OpenForgejo_Click(object sender, RoutedEventArgs e)
+    {
+        Process.Start(new ProcessStartInfo("http://192.168.1.73:3100/igor/WDTTSL") { UseShellExecute = true });
+    }
+
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) return;

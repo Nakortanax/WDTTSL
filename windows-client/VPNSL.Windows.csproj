@@ -10,8 +10,8 @@
     <StartupObject>VPNSL.Windows.Program</StartupObject>
     <AssemblyName>VPNSL.Windows</AssemblyName>
     <RootNamespace>VPNSL.Windows</RootNamespace>
-    <Version>1.0.2</Version>
-    <FileVersion>1.0.2.0</FileVersion>
+    <Version>1.0.3</Version>
+    <FileVersion>1.0.3.0</FileVersion>
     <Product>VPNSL for Windows</Product>
     <Authors>Sazhaev-IA</Authors>
     <Platforms>x64</Platforms>
