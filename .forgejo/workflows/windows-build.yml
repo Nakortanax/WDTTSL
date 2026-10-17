@@ -1,0 +1,106 @@
+name: Windows CI - Automatic Build
+
+on:
+  push:
+    branches:
+      - ci/windows-v1.0.3-forgejo-20261017
+  workflow_dispatch:
+
+jobs:
+  windows-build:
+    runs-on: linux-build
+    timeout-minutes: 90
+
+    steps:
+      - name: Build Windows and retrieve artifacts
+        shell: bash
+        env:
+          WINDOWS_CI_GATEWAY_KEY: ${{ secrets.WINDOWS_CI_GATEWAY_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          SHA="${FORGEJO_SHA:-${GITHUB_SHA:-}}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "ERROR: invalid commit SHA"
+            exit 1
+          }
+
+          mkdir -p artifacts
+
+          KEY="$(mktemp)"
+          KNOWN="$(mktemp)"
+          trap 'rm -f "$KEY" "$KNOWN"' EXIT
+
+          test -n "$WINDOWS_CI_GATEWAY_KEY"
+          printf '%s\n' "$WINDOWS_CI_GATEWAY_KEY" > "$KEY"
+          unset WINDOWS_CI_GATEWAY_KEY
+          chmod 600 "$KEY"
+
+          printf '192.168.1.73 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPNkaPlr44CYHn83wmilNPc1CNPixmnH4GJJ0rwe1vKp\n' > "$KNOWN"
+
+          gateway() {
+            ssh -T \
+              -i "$KEY" \
+              -o IdentitiesOnly=yes \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$KNOWN" \
+              -o GlobalKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              -o ServerAliveInterval=30 \
+              igor@192.168.1.73 "$@"
+          }
+
+          echo "=== CHECK SECURE GATEWAY ==="
+          RESULT="$(gateway ping)"
+          test "$RESULT" = "FORGEJO_CI_GATEWAY=OK"
+
+          echo "=== BUILD COMMIT ==="
+          echo "$SHA"
+
+          gateway "build $SHA" | tee artifacts/build.log
+
+          grep -q '^=== PIPELINE SUCCESS ===' artifacts/build.log
+
+          BUILD_ID="$(
+            sed -nE 's#^Artifacts: .*/([0-9]{8}-[0-9]{6}-[0-9a-f]{12})\r?$#\1#p' \
+              artifacts/build.log | tail -n1
+          )"
+
+          [[ "$BUILD_ID" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{12}$ ]] || {
+            echo "ERROR: build ID not found"
+            exit 1
+          }
+
+          echo "=== DOWNLOAD ARTIFACTS ==="
+          gateway "get $BUILD_ID setup" \
+            > artifacts/VPNSL-1.0.3-Windows-x64-Forgejo-Setup.exe
+
+          gateway "get $BUILD_ID zip" \
+            > artifacts/VPNSL-1.0.3-Windows-x64-Forgejo.zip
+
+          gateway "get $BUILD_ID sha256" \
+            > artifacts/SHA256SUMS.txt
+
+          gateway "get $BUILD_ID commit" \
+            > artifacts/COMMIT.txt
+
+          echo "=== VERIFY COMMIT ==="
+          test "$(tr -d '\r\n' < artifacts/COMMIT.txt)" = "$SHA"
+
+          echo "=== VERIFY CHECKSUMS ==="
+          (
+            cd artifacts
+            sha256sum -c SHA256SUMS.txt
+          )
+
+          echo "=== SUCCESS ==="
+
+      - name: Upload EXE and ZIP to Forgejo
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: VPNSL-Windows-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
