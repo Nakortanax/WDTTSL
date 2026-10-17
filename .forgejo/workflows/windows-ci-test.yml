@@ -1,0 +1,28 @@
+name: Windows CI - Connection Test
+
+on:
+  push:
+    branches:
+      - ci/windows-v1.0.3-forgejo-20261017
+  workflow_dispatch:
+
+jobs:
+  connection-test:
+    runs-on: linux-build
+    steps:
+      - name: Check Windows and Linux connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== FORGEJO RUNNER ==="
+          hostname
+
+          echo "=== LINUX HOST SSH ==="
+          timeout 5 bash -c 'echo > /dev/tcp/192.168.1.73/22'
+          echo "LINUX_SSH=OK"
+
+          echo "=== WINDOWS SSH ==="
+          timeout 5 bash -c 'echo > /dev/tcp/192.168.1.64/22'
+          echo "WINDOWS_SSH=OK"
+
+          echo "=== CONNECTION TEST SUCCESS ==="
