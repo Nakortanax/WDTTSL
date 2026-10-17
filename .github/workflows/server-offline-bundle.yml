@@ -47,7 +47,8 @@ jobs:
           cargo +1.97.1 install cargo-zigbuild --locked
           rustc +1.97.1 --version
           cargo +1.97.1 --version
-          cargo zigbuild --version
+          command -v cargo-zigbuild
+          cargo zigbuild --help >/dev/null
 
       - name: Vendor every Rust dependency
         working-directory: rust-server
@@ -140,7 +141,8 @@ jobs:
             rustc +1.97.1 --version
             cargo +1.97.1 --version
             zig version
-            cargo zigbuild --version
+            echo "cargo-zigbuild=$(command -v cargo-zigbuild)"
+            sha256sum "$(command -v cargo-zigbuild)"
             uname -a
           } > "$ROOT/meta/TOOLCHAIN.txt"
 
