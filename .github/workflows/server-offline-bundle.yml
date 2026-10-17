@@ -1,0 +1,178 @@
+name: Build server offline kit
+
+on:
+  push:
+    branches:
+      - "backup/server-offline-kit-2026-10-17"
+    paths:
+      - ".github/workflows/server-offline-bundle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-offline-kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SOURCE_COMMIT: c2a1e4a73886f40ac0828420622ba8a2cfc966e2
+      KIT_NAME: VPNSL-server-offline-2026-10-17
+      RELEASE_TAG: server-offline-2026-10-17
+
+    steps:
+      - name: Checkout snapshot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install system build tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y musl-tools rsync zip
+          python3 -m pip install --break-system-packages ziglang
+          sudo tee /usr/local/bin/zig >/dev/null <<'EOF'
+          #!/usr/bin/env bash
+          exec python3 -m ziglang "$@"
+          EOF
+          sudo chmod +x /usr/local/bin/zig
+          zig version
+
+      - name: Install pinned Rust and cross-build helper
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf --toolchain 1.97.1
+          cargo +1.97.1 install cargo-zigbuild --locked
+          rustc +1.97.1 --version
+          cargo +1.97.1 --version
+          cargo zigbuild --version
+
+      - name: Vendor every Rust dependency
+        working-directory: rust-server
+        run: |
+          set -euxo pipefail
+          cargo +1.97.1 vendor --locked vendor > /tmp/vendor-config.txt
+          cat >> .cargo/config.toml <<'EOF'
+
+          # Offline recovery bundle: use only dependencies stored in ./vendor.
+          [source.crates-io]
+          replace-with = "vendored-sources"
+
+          [source.vendored-sources]
+          directory = "vendor"
+
+          [net]
+          offline = true
+          EOF
+          test -d vendor
+          test -n "$(find vendor -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+      - name: Build Linux server binaries from vendored sources
+        working-directory: rust-server
+        run: |
+          set -euxo pipefail
+          ./build_linux.sh --no-tests
+          test -x dist/csqtt-linux-amd64
+          test -x dist/csqtt-linux-arm64
+          test -x dist/csqtt-linux-armv7
+          file dist/csqtt-linux-*
+          ./dist/csqtt-linux-amd64 --help >/tmp/csqtt-help.txt 2>&1 || true
+
+      - name: Assemble recovery kit
+        run: |
+          set -euxo pipefail
+          ROOT="$RUNNER_TEMP/$KIT_NAME"
+          mkdir -p "$ROOT/bin" "$ROOT/source" "$ROOT/meta"
+
+          cp rust-server/dist/csqtt-linux-amd64 "$ROOT/bin/"
+          cp rust-server/dist/csqtt-linux-arm64 "$ROOT/bin/"
+          cp rust-server/dist/csqtt-linux-armv7 "$ROOT/bin/"
+
+          rsync -a --exclude build --exclude dist rust-server/ "$ROOT/source/rust-server/"
+          cp -a shared "$ROOT/source/shared"
+          cp -a scripts "$ROOT/source/scripts"
+          cp LICENSE README.md CHANCHELOG.md "$ROOT/source/"
+          git archive --format=tar.gz -o "$ROOT/source/full-repository-snapshot.tar.gz" HEAD
+
+          cat > "$ROOT/README_OFFLINE_RU.md" <<EOF
+          # VPNSL / CSQTT — аварийный офлайн-комплект сервера
+
+          Дата снимка: 2026-10-17
+          Исходная ветка: windows-v1.0.8
+          Исходный commit: $SOURCE_COMMIT
+          Rust: 1.97.1
+          Серверный crate: csqtt 2.1.9
+
+          ## Что внутри
+
+          - bin/csqtt-linux-amd64 — готовый Linux x86_64 сервер.
+          - bin/csqtt-linux-arm64 — готовый Linux ARM64 сервер.
+          - bin/csqtt-linux-armv7 — готовый Linux ARMv7 сервер.
+          - source/rust-server — исходники сервера и полный каталог vendor всех Cargo-зависимостей.
+          - source/shared и source/scripts — связанные исходники и диагностические/сборочные скрипты.
+          - source/full-repository-snapshot.tar.gz — полный снимок репозитория на момент сборки комплекта.
+          - meta/TOOLCHAIN.txt — версии инструментов, которыми собран комплект.
+          - SHA256SUMS.txt — контрольные суммы каждого файла.
+
+          ## Восстановление без исходного проекта в интернете
+
+          Для запуска на обычном x86_64 VPS достаточно использовать bin/csqtt-linux-amd64
+          вместе с сохранённой конфигурацией/параметрами запуска вашего сервера.
+
+          Все Rust-зависимости исходников уже находятся в source/rust-server/vendor.
+          source/rust-server/.cargo/config.toml принудительно использует vendor и offline=true,
+          поэтому Cargo не должен обращаться к crates.io при повторной сборке зависимостей.
+
+          Готовые бинарники являются основной аварийной точкой восстановления: для их запуска
+          скачивание Rust/Cargo или исходного проекта не требуется.
+
+          Перед использованием можно проверить целостность:
+              sha256sum -c SHA256SUMS.txt
+          EOF
+
+          {
+            echo "SOURCE_COMMIT=$SOURCE_COMMIT"
+            echo "BUNDLE_BUILD_COMMIT=$GITHUB_SHA"
+            echo "RUN_ID=$GITHUB_RUN_ID"
+            echo
+            rustc +1.97.1 --version
+            cargo +1.97.1 --version
+            zig version
+            cargo zigbuild --version
+            uname -a
+          } > "$ROOT/meta/TOOLCHAIN.txt"
+
+          cp /tmp/csqtt-help.txt "$ROOT/meta/csqtt-amd64-help.txt" || true
+
+          (
+            cd "$ROOT"
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+          cd "$RUNNER_TEMP"
+          zip -9 -r "$KIT_NAME.zip" "$KIT_NAME"
+          sha256sum "$KIT_NAME.zip" > "$KIT_NAME.zip.sha256"
+          mv "$KIT_NAME.zip" "$GITHUB_WORKSPACE/"
+          mv "$KIT_NAME.zip.sha256" "$GITHUB_WORKSPACE/"
+
+      - name: Upload GitHub Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.KIT_NAME }}
+          path: |
+            ${{ env.KIT_NAME }}.zip
+            ${{ env.KIT_NAME }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish permanent GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release delete "$RELEASE_TAG" --yes --cleanup-tag
+          fi
+          gh release create "$RELEASE_TAG"             "$KIT_NAME.zip"             "$KIT_NAME.zip.sha256"             --target "$GITHUB_SHA"             --title "VPNSL server offline kit — 2026-10-17"             --notes "Аварийный офлайн-комплект сервера VPNSL/CSQTT. Содержит готовые Linux-бинарники для amd64/arm64/armv7, исходники, полный Cargo vendor, снимок репозитория, версии инструментов и SHA256."
