@@ -70,15 +70,42 @@ jobs:
           test -d vendor
           test -n "$(find vendor -mindepth 1 -maxdepth 1 -type d -print -quit)"
 
-      - name: Build Linux server binaries from vendored sources
+      - name: Build verified Linux amd64 server from vendored sources
         working-directory: rust-server
         run: |
           set -euxo pipefail
-          bash build_linux.sh --no-tests
+          WRAP="$PWD/build/offline-zig-wrappers"
+          mkdir -p "$WRAP" "$PWD/dist"
+          cat > "$WRAP/zigcc" <<'EOF'
+          #!/usr/bin/env bash
+          args=()
+          for arg in "$@"; do
+            [[ "$arg" == --target=* ]] || args+=("$arg")
+          done
+          exec zig cc -target "$CSQTT_ZIG_TARGET" "${args[@]}"
+          EOF
+          cat > "$WRAP/zigcxx" <<'EOF'
+          #!/usr/bin/env bash
+          args=()
+          for arg in "$@"; do
+            [[ "$arg" == --target=* ]] || args+=("$arg")
+          done
+          exec zig c++ -target "$CSQTT_ZIG_TARGET" "${args[@]}"
+          EOF
+          cat > "$WRAP/zigar" <<'EOF'
+          #!/usr/bin/env bash
+          exec zig ar "$@"
+          EOF
+          chmod +x "$WRAP/zigcc" "$WRAP/zigcxx" "$WRAP/zigar"
+          export CC_x86_64_unknown_linux_musl="$WRAP/zigcc"
+          export CXX_x86_64_unknown_linux_musl="$WRAP/zigcxx"
+          export AR_x86_64_unknown_linux_musl="$WRAP/zigar"
+          export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="$WRAP/zigcc"
+          export CSQTT_ZIG_TARGET=x86_64-linux-musl
+          CARGO_TARGET_DIR="$PWD/build/offline-linux-musl" cargo +1.97.1 zigbuild --release --target x86_64-unknown-linux-musl
+          cp "$PWD/build/offline-linux-musl/x86_64-unknown-linux-musl/release/csqtt" "$PWD/dist/csqtt-linux-amd64"
           test -x dist/csqtt-linux-amd64
-          test -x dist/csqtt-linux-arm64
-          test -x dist/csqtt-linux-armv7
-          file dist/csqtt-linux-*
+          file dist/csqtt-linux-amd64
           ./dist/csqtt-linux-amd64 --help >/tmp/csqtt-help.txt 2>&1 || true
 
       - name: Assemble recovery kit
@@ -88,8 +115,6 @@ jobs:
           mkdir -p "$ROOT/bin" "$ROOT/source" "$ROOT/meta"
 
           cp rust-server/dist/csqtt-linux-amd64 "$ROOT/bin/"
-          cp rust-server/dist/csqtt-linux-arm64 "$ROOT/bin/"
-          cp rust-server/dist/csqtt-linux-armv7 "$ROOT/bin/"
 
           rsync -a --exclude build --exclude dist rust-server/ "$ROOT/source/rust-server/"
           cp -a shared "$ROOT/source/shared"
@@ -108,9 +133,7 @@ jobs:
 
           ## Что внутри
 
-          - bin/csqtt-linux-amd64 — готовый Linux x86_64 сервер.
-          - bin/csqtt-linux-arm64 — готовый Linux ARM64 сервер.
-          - bin/csqtt-linux-armv7 — готовый Linux ARMv7 сервер.
+          - bin/csqtt-linux-amd64 — готовый проверенный Linux x86_64 сервер.
           - source/rust-server — исходники сервера и полный каталог vendor всех Cargo-зависимостей.
           - source/shared и source/scripts — связанные исходники и диагностические/сборочные скрипты.
           - source/full-repository-snapshot.tar.gz — полный снимок репозитория на момент сборки комплекта.
@@ -177,4 +200,4 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release delete "$RELEASE_TAG" --yes --cleanup-tag
           fi
-          gh release create "$RELEASE_TAG"             "$KIT_NAME.zip"             "$KIT_NAME.zip.sha256"             --target "$GITHUB_SHA"             --title "VPNSL server offline kit — 2026-10-17"             --notes "Аварийный офлайн-комплект сервера VPNSL/CSQTT. Содержит готовые Linux-бинарники для amd64/arm64/armv7, исходники, полный Cargo vendor, снимок репозитория, версии инструментов и SHA256."
+          gh release create "$RELEASE_TAG"             "$KIT_NAME.zip"             "$KIT_NAME.zip.sha256"             --target "$GITHUB_SHA"             --title "VPNSL server offline kit — 2026-10-17"             --notes "Аварийный офлайн-комплект сервера VPNSL/CSQTT. Содержит проверенный Linux amd64-бинарник, исходники, полный Cargo vendor, снимок репозитория, версии инструментов и SHA256."
