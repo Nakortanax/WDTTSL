@@ -1,0 +1,4 @@
+WDTTSL Windows CI automation smoke test.
+Source branch: bridge/wdttsl-auto-dispatch-20261018
+Purpose: verify GitHub to Git Bridge to Forgejo dispatcher to Windows EXE and ZIP.
+No application source or build configuration changed by this file.
