@@ -5,6 +5,15 @@ on:
     branches:
       - ci/windows-v1.0.3-forgejo-20261017
   workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Source branch in Forgejo'
+        required: true
+        type: string
+      source_sha:
+        description: 'Exact source commit SHA'
+        required: true
+        type: string
 
 jobs:
   windows-build:
@@ -16,11 +25,28 @@ jobs:
         shell: bash
         env:
           WINDOWS_CI_GATEWAY_KEY: ${{ secrets.WINDOWS_CI_GATEWAY_KEY }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           umask 077
 
-          SHA="${FORGEJO_SHA:-${GITHUB_SHA:-}}"
+          if [[ -n "$SOURCE_BRANCH" || -n "$SOURCE_SHA" ]]; then
+            [[ -n "$SOURCE_BRANCH" && -n "$SOURCE_SHA" ]] || {
+              echo "ERROR: incomplete dispatch inputs"
+              exit 1
+            }
+            BRANCH="$SOURCE_BRANCH"
+            SHA="$SOURCE_SHA"
+          else
+            BRANCH=ci/windows-v1.0.3-forgejo-20261017
+            SHA="${FORGEJO_SHA:-${GITHUB_SHA:-}}"
+          fi
+
+          git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || {
+            echo "ERROR: invalid branch"
+            exit 1
+          }
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || {
             echo "ERROR: invalid commit SHA"
             exit 1
@@ -59,7 +85,7 @@ jobs:
           echo "=== BUILD COMMIT ==="
           echo "$SHA"
 
-          gateway "build $SHA" | tee artifacts/build.log
+          gateway "build-ref $BRANCH $SHA" | tee artifacts/build.log
 
           grep -q '^=== PIPELINE SUCCESS ===' artifacts/build.log
 
