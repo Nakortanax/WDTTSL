@@ -144,3 +144,16 @@ Systemd helper и endpoints `/health/systemd/*` в финальный вариа
 - общий Docker counter продолжает показывать все реально существующие контейнеры.
 
 До обновления живого сервера этот GitHub checkpoint описывает целевую конфигурацию.
+
+## Новые read-only проверки — 25.10.2026
+
+- `/health/forgejo` — ответ веб-панели Forgejo на :3100.
+- `/health/tcp/forgejo-ssh` — доступность TCP 2222 (не проверка Git-авторизации).
+- `/health/docker-service/forgejo-runner` — Docker state `forgejo-builder`.
+- `/health/docker-service/forgejo-dind` — Docker state `forgejo-build-docker`.
+- `/health/docker-service/amneziawg` — Docker state `amnezia-home-awg`.
+- Прежние endpoint'ы, включая `vpnsl`, `weightdiary`, `docker`, не изменены.
+
+Только первые два проверяют сетевую доступность; остальные показывают статус `running` без доступа к контейнерным логам, ключам и конфигурациям. При остановленном контейнере возвращается HTTP 503. Git Bridge / dispatch systemd-таймеры на этом этапе отображены статическими информационными карточками, поскольку status-контейнер не имеет доступа к host systemd. **Никакой Docker socket, systemd D-Bus или привилегированный shell не экспортируется в браузер.**
+
+Выпускать только через `server-dashboard/deploy-homer.sh` (backup и rollback). Код сохранён в GitHub, статус рабочего сервера требует подтверждения после применения.
