@@ -40,6 +40,7 @@ services:
       DOCKER_PROXY: "http://dockerproxy:2375"
       ADGUARD_URL: "http://192.168.1.73:8080/"
       VPNSL_URL: "https://192.168.1.73:46002/"
+      FORGEJO_URL: "http://192.168.1.73:3100/"
       KEENETIC_URL: "http://192.168.1.1/"
       JELLYFIN_URL: "http://192.168.1.73:8096/"
       TRANSMISSION_URL: "http://192.168.1.73:9091/transmission/web/"
