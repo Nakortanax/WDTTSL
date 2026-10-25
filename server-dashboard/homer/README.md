@@ -111,3 +111,25 @@ sudo docker compose stop
 - старые endpoints `/health/docker-service/ollama` и `/health/docker-service/postgres`
   возвращают HTTP 404 `unknown docker service`;
 - live `config.yml` больше не содержит карточки Ollama и PostgreSQL.
+
+## Обновление панели — 25.10.2026 (исходники GitHub)
+
+В сохранённой конфигурации добавлены:
+
+- AmneziaWG 3.1 (read-only мониторинг состояния контейнера `amnezia-home-awg`), отдельно от VPNSL / CSQTT;
+- Forgejo WEB и Git-over-SSH (3100/tcp и 2222/tcp);
+- локальный Forgejo Runner `forgejo-builder` и DinD Android builder `forgejo-build-docker`;
+- информационные (не live) карточки Git Bridge и диспетчера CI; они не притворяются работающими без специальной systemd-проверки;
+- ссылки на пять проектов в Forgejo и актуализированное описание WeightDiaryBot.
+
+**Это коммит конфигурации, а не подтверждение её применения на Ubuntu.**
+Для применения без изменения других служб есть сценарий `server-dashboard/deploy-homer.sh`.
+На сервере должны существовать `/opt/homer` и `/opt/homer-status`. Запуск из checkout ветки `home-dashboard-homer`:
+
+```bash
+sudo bash server-dashboard/deploy-homer.sh
+```
+
+Сценарий делает backup в `/opt/homer-dashboard-backups/YYYYMMDD-HHMMSS`, проверяет Python и Docker Compose, копирует только конфигурацию Homer и два файла status-proxy, пересоздаёт **только** контейнеры `homer` и `homer-status`, затем проверяет HTTP. При ошибке восстанавливает прежние файлы и контейнеры. VPN, Forgejo, Docker daemon, Runner, другие сервисы и volumes не перезапускает.
+
+`/health/docker-service/*` проверяет только Docker state `running`, а не успешные AWG handshakes или успешную CI-сборку. Их надо проверять отдельно. Порт status proxy `:8090` доступен только в LAN; наружу не открывать.
