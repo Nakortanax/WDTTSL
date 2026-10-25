@@ -14,6 +14,7 @@ DOCKER_PROXY = os.getenv("DOCKER_PROXY", "http://dockerproxy:2375").rstrip("/")
 TARGETS = {
     "adguard": (os.getenv("ADGUARD_URL", "http://192.168.1.73:8080/"), False),
     "vpnsl": (os.getenv("VPNSL_URL", "https://192.168.1.73:46002/"), True),
+    "forgejo": (os.getenv("FORGEJO_URL", "http://192.168.1.73:3100/"), False),
     "keenetic": (os.getenv("KEENETIC_URL", "http://192.168.1.1/"), True),
     "jellyfin": (os.getenv("JELLYFIN_URL", "http://192.168.1.73:8096/"), False),
     "transmission": (os.getenv("TRANSMISSION_URL", "http://192.168.1.73:9091/transmission/web/"), False),
@@ -24,6 +25,7 @@ TARGETS = {
 
 TCP_TARGETS = {
     "ssh": ("192.168.1.73", 22),
+    "forgejo-ssh": ("192.168.1.73", 2222),
     "samba": ("192.168.1.73", 445),
     "xrdp": ("192.168.1.73", 3389),
 }
@@ -100,6 +102,9 @@ def docker_service_states():
     data = docker_raw_containers()
     expected = {
         "weightdiary": "weightdiarybot-bot-1",
+        "amneziawg": "amnezia-home-awg",
+        "forgejo-runner": "forgejo-builder",
+        "forgejo-dind": "forgejo-build-docker",
     }
     states = {}
     for item in data:
