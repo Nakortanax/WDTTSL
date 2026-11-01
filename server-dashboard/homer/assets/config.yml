@@ -107,6 +107,25 @@ services:
         url: "http://192.168.1.1"
         target: "_blank"
 
+  - name: "Удалённые VPS"
+    icon: "fas fa-cloud"
+    items:
+      - name: "VPS №2 — AmneziaWG 3.1"
+        icon: "fas fa-shield-halved"
+        subtitle: "144.31.82.53 · UDP 46812 · панель через SSH"
+        tag: "AWG 3.1"
+        tagstyle: "is-info"
+        url: "https://127.0.0.1:8444/"
+        target: "_blank"
+
+      - name: "SSH-туннель к VPS №2 — копировать"
+        type: "CopyToClipboard"
+        icon: "fas fa-terminal"
+        subtitle: "ssh -N -L 8444:127.0.0.1:8444 root@144.31.82.53"
+        clipboard: "ssh -N -L 8444:127.0.0.1:8444 root@144.31.82.53"
+        tag: "PowerShell"
+        tagstyle: "is-info"
+
   - name: "Медиа"
     icon: "fas fa-photo-film"
     items:
