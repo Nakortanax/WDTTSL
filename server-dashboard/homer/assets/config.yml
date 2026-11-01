@@ -123,6 +123,8 @@ services:
         icon: "fas fa-terminal"
         subtitle: "ssh -N -L 8444:127.0.0.1:8444 root@144.31.82.53"
         clipboard: "ssh -N -L 8444:127.0.0.1:8444 root@144.31.82.53"
+        url: "http://192.168.1.73:8088/assets/vps2-tunnel.txt"
+        target: "_blank"
         tag: "PowerShell"
         tagstyle: "is-info"
 
