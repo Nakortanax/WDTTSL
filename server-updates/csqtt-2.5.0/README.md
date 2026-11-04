@@ -34,7 +34,9 @@ server-updates/csqtt-2.5.0/
 bash server-updates/csqtt-2.5.0/check-source.sh
 ```
 
-Требуется `git`, `bash`, `cargo` и Rust 1.97.1, доступ к crates.io либо уже заполненный Cargo cache. Скрипт сверяет Git blob SHA, синтаксис установщика, запускает `cargo test --locked` и `cargo build --release --locked`, проверяет `--protocol-revision` и **не** выполняет установку.
+Для текущей **диагностической** сборки в Forgejo используется `x86_64-unknown-linux-gnu` (Debian 12, Rust 1.97.1, системный C/C++ compiler) без скачивания Zig. Это проверка компиляции и тестов; полученный GNU/glibc-бинарник **не** является переносимым MUSL-релизом и **не должен** подменять рабочий сервер VPS или попадать в APK/Windows-пакеты. Для финального статического MUSL-бинарника потребуется отдельная сборка с Zig или другим проверенным MUSL C++ toolchain.
+
+Требуется `git`, `bash`, `cargo`, Rust 1.97.1 и C/C++ compiler, доступ к crates.io либо уже заполненный Cargo cache. Скрипт сверяет Git blob SHA, синтаксис установщика, запускает `cargo test --locked --target x86_64-unknown-linux-gnu` и `cargo build --locked --release --target x86_64-unknown-linux-gnu`, проверяет `--protocol-revision` и **не** выполняет установку.
 
 ## Что нужно для использования нового сервера
 
