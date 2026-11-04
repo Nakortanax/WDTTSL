@@ -42,7 +42,7 @@ jobs:
             fi
             "${APT[@]}" apt-get update
             DEBIAN_FRONTEND=noninteractive "${APT[@]}" apt-get install -y --no-install-recommends \
-              ca-certificates curl git file build-essential musl-tools cmake pkg-config perl
+              ca-certificates curl git file build-essential musl-tools cmake pkg-config perl xz-utils
           else
             echo "Non-apt container; checking for preinstalled build dependencies"
             for cmd in curl git file cc musl-gcc cmake pkg-config perl; do
@@ -68,6 +68,22 @@ jobs:
           rustc --version
           cargo --version
           musl-gcc --version | head -n 1
+
+          echo "=== Install pinned Zig 0.14.1 (C and C++ compiler for MUSL) ==="
+          zig_archive="/tmp/vpnsl-zig-x86_64-linux-0.14.1.tar.xz"
+          zig_dir="$HOME/.local/zig/0.14.1"
+          curl --fail --location --retry 3 --connect-timeout 20 \
+            --output "$zig_archive" \
+            https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz
+          printf '%s  %s\\n' \
+            '24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c' \
+            "$zig_archive" | sha256sum --check --status
+          mkdir -p "$zig_dir"
+          tar -xJf "$zig_archive" -C "$zig_dir" --strip-components=1
+          ln -sfn "$zig_dir/zig" "$HOME/.cargo/bin/zig"
+          zig version
+          test "$(zig version)" = "0.14.1"
+
           if [[ -n "${GITHUB_PATH:-}" ]]; then
             printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           fi
@@ -82,7 +98,10 @@ jobs:
           cargo --version
           git --version
           rustup target list --installed
+          zig version
           test "$(rustc --version | awk '{print $2}')" = "$RUST_TOOLCHAIN"
+          test "$(zig version)" = "0.14.1"
+          test -x "$HOME/.cargo/bin/zig"
 
       - name: Verify upstream blobs, test and build server (no installation)
         shell: bash
