@@ -2,7 +2,7 @@
 
 **Статус: исходники импортированы, интеграция и совместимость НЕ подтверждены. Не устанавливать поверх действующего VPNSL.**
 
-Источник: [amurcanov/csqtt](https://github.com/amurcanov/csqtt), тег [v2.5.0](https://github.com/amurcanov/csqtt/releases/tag/v2.5.0), commit `fd936ef087c34cc46f26111dc2361f43b8b03c07`, релиз от 20.10.2026. Репозиторий upstream архивирован. Файлы `rust-server/`, `shared/` и `deploy.sh` импортированы побайтово без изменений; исходные Git blob SHA записаны в `UPSTREAM_BLOBS.tsv`. Исходная лицензия PolyForm Noncommercial и обязательные уведомления приведены в корневом `LICENSE` VPNSL, который совпадает с upstream.
+Источник: [amurcanov/csqtt](https://github.com/amurcanov/csqtt), тег [v2.5.0](https://github.com/amurcanov/csqtt/releases/tag/v2.5.0), commit `fd936ef087c34cc46f26111dc2361f43b8b03c07`, релиз от 20.10.2026. Репозиторий upstream архивирован. Файлы `rust-server/`, `shared/`, `app/src/main/assets/domains.txt` и `deploy.sh` импортированы побайтово без изменений; исходные Git blob SHA записаны в `UPSTREAM_BLOBS.tsv`. Исходная лицензия PolyForm Noncommercial и обязательные уведомления приведены в корневом `LICENSE` VPNSL, который совпадает с upstream.
 
 **Лицензирование:** у upstream 2.5.0 файл `rust-server/Cargo.toml` содержит поле `license = "Unlicense"`, но его корневой `LICENSE` и уведомления указывают **PolyForm Noncommercial 1.0.0**. Это противоречие не разрешено; при переносе сохранены исходный код и некоммерческие уведомления, а изменение лицензии не предполагается.
 
@@ -23,6 +23,7 @@
 server-updates/csqtt-2.5.0/
 ├── rust-server/       — исходники Rust сервера 2.5.0
 ├── shared/            — исходный общий код 2.5.0 (в том числе DTLS)
+├── app/src/main/assets/domains.txt — точный шаблон upstream, обязательный для include_str! в web_panel.rs
 ├── deploy.sh          — upstream установщик, только для анализа и лабораторного теста
 ├── UPSTREAM_BLOBS.tsv — контрольные Git SHA файлов
 └── check-source.sh    — проверки и локальная сборка без запуска сервиса
