@@ -13,9 +13,14 @@ while IFS=$'\t' read -r expected relative; do
 done < "$HERE/UPSTREAM_BLOBS.tsv"
 bash -n "$HERE/deploy.sh"
 cd "$HERE/rust-server"
-cargo test --locked
-cargo build --locked --release
-revision="$(./target/release/csqtt --protocol-revision)"
+# Upstream .cargo/config.toml defaults to the MUSL target. Be explicit so the
+# tested binary and the archived artifact are the same executable.
+target="x86_64-unknown-linux-musl"
+cargo test --locked --target "$target"
+cargo build --locked --release --target "$target"
+binary="target/$target/release/csqtt"
+test -s "$binary"
+revision="$("$binary" --protocol-revision)"
 [[ "$revision" == 'CSQTT-WIRE-3' ]] || { echo "Unexpected revision: $revision" >&2; exit 1; }
 printf '\nSource integrity and build OK; wire marker = %s\n' "$revision"
 printf '%s\n' 'NOTE: Compatibility with VPNSL Android 1.0.10 / Windows 1.0.3 is NOT established. Do not deploy.'
