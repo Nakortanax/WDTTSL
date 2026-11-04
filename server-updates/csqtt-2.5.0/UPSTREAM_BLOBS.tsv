@@ -15,6 +15,7 @@
 9efdc265fbadd4e58a59736249d0aef35f01d1e2	rust-server/tproxy.rs
 ac4d6b6a0b1add12d7247842e472ddb5f81e3bc6	shared/spsc_ring.rs
 cb454fdac7e2ef34eb9ce2c966e5f1ee4a7729d2	rust-server/tun_device.rs
+d52d29657e34ffa13544323087ed7f20b344737a	app/src/main/assets/domains.txt
 d6e3f19014015a95920cbf4ec653273548bc4cb7	rust-server/.cargo/config.toml
 d9db6242ce9607ae5bebda6d1438cdbacb941a2a	rust-server/proxy_route.rs
 def46419f037e3200629ed9947fe873996e7e3d0	shared/dtls.rs
