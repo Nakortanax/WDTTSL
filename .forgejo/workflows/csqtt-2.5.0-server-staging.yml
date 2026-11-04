@@ -1,0 +1,49 @@
+name: CSQTT 2.5.0 server staging - verify and build (NO DEPLOY)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/csqtt-2.5.0-server-staging-20261104
+
+jobs:
+  server-staging:
+    runs-on: linux-build
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - name: Checkout exact staging source
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Print provenance and check toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version
+          cargo --version
+          git --version
+          rustc +1.97.1 --version
+
+      - name: Verify upstream blobs, test and build server (no installation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging-artifacts
+          bash server-updates/csqtt-2.5.0/check-source.sh 2>&1 | tee staging-artifacts/build.log
+          cp server-updates/csqtt-2.5.0/rust-server/target/release/csqtt staging-artifacts/csqtt-2.5.0-linux-native-STAGING
+          chmod 0755 staging-artifacts/csqtt-2.5.0-linux-native-STAGING
+          file staging-artifacts/csqtt-2.5.0-linux-native-STAGING
+          sha256sum staging-artifacts/csqtt-2.5.0-linux-native-STAGING > staging-artifacts/SHA256SUMS.txt
+          git rev-parse HEAD > staging-artifacts/SOURCE_COMMIT.txt
+          printf '%s\n' 'STAGING ONLY. PROTOCOL COMPATIBILITY WITH VPNSL 1.0.10/1.0.3 NOT VERIFIED.' > staging-artifacts/NOT_FOR_PRODUCTION.txt
+
+      - name: Archive diagnostics and staging server binary
+        if: always()
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: csqtt-2.5.0-staging-check
+          path: staging-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
