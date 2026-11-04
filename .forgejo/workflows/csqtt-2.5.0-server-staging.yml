@@ -12,32 +12,93 @@ jobs:
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: "2"
+      RUST_TOOLCHAIN: "1.97.1"
+      RUST_TARGET: "x86_64-unknown-linux-musl"
     steps:
       - name: Checkout exact staging source
         uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Prepare Rust and native Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Job container identity ==="
+          id
+          cat /etc/os-release || true
+          uname -m
+          if [[ "$(uname -m)" != "x86_64" ]]; then
+            echo "This staging workflow currently requires x86_64 runner architecture" >&2
+            exit 2
+          fi
+
+          if command -v apt-get >/dev/null 2>&1; then
+            if [[ "$(id -u)" == "0" ]]; then
+              APT=()
+            elif command -v sudo >/dev/null 2>&1; then
+              APT=(sudo)
+            else
+              echo "Need root/sudo inside the job container to install build dependencies" >&2
+              exit 2
+            fi
+            "${APT[@]}" apt-get update
+            DEBIAN_FRONTEND=noninteractive "${APT[@]}" apt-get install -y --no-install-recommends \
+              ca-certificates curl git file build-essential musl-tools cmake pkg-config perl
+          else
+            echo "Non-apt container; checking for preinstalled build dependencies"
+            for cmd in curl git file cc musl-gcc cmake pkg-config perl; do
+              command -v "$cmd" >/dev/null 2>&1 || {
+                echo "Missing $cmd; provide a Debian/Ubuntu build image or preinstall dependencies" >&2
+                exit 2
+              }
+            done
+          fi
+
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://sh.rustup.rs -o /tmp/vpnsl-rustup-init.sh
+            sh /tmp/vpnsl-rustup-init.sh -y \
+              --profile minimal --default-toolchain none --no-modify-path
+          fi
+
+          export PATH="$HOME/.cargo/bin:$PATH"
+          command -v rustup
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal \
+            --component rustfmt --component clippy --target "$RUST_TARGET"
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+          musl-gcc --version | head -n 1
+          if [[ -n "${GITHUB_PATH:-}" ]]; then
+            printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Print provenance and check toolchain
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
           git rev-parse HEAD
           rustc --version
           cargo --version
           git --version
-          rustc +1.97.1 --version
+          rustup target list --installed
+          test "$(rustc --version | awk '{print $2}')" = "$RUST_TOOLCHAIN"
 
       - name: Verify upstream blobs, test and build server (no installation)
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
           mkdir -p staging-artifacts
-          bash server-updates/csqtt-2.5.0/check-source.sh 2>&1 | tee staging-artifacts/build.log
-          cp server-updates/csqtt-2.5.0/rust-server/target/release/csqtt staging-artifacts/csqtt-2.5.0-linux-native-STAGING
-          chmod 0755 staging-artifacts/csqtt-2.5.0-linux-native-STAGING
-          file staging-artifacts/csqtt-2.5.0-linux-native-STAGING
-          sha256sum staging-artifacts/csqtt-2.5.0-linux-native-STAGING > staging-artifacts/SHA256SUMS.txt
           git rev-parse HEAD > staging-artifacts/SOURCE_COMMIT.txt
           printf '%s\n' 'STAGING ONLY. PROTOCOL COMPATIBILITY WITH VPNSL 1.0.10/1.0.3 NOT VERIFIED.' > staging-artifacts/NOT_FOR_PRODUCTION.txt
+          bash server-updates/csqtt-2.5.0/check-source.sh 2>&1 | tee staging-artifacts/build.log
+          binary="server-updates/csqtt-2.5.0/rust-server/target/$RUST_TARGET/release/csqtt"
+          test -s "$binary"
+          cp "$binary" staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING
+          chmod 0755 staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING
+          file staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING
+          sha256sum staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING > staging-artifacts/SHA256SUMS.txt
 
       - name: Archive diagnostics and staging server binary
         if: always()
