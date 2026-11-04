@@ -1,4 +1,4 @@
-name: CSQTT 2.5.0 server staging - verify and build (NO DEPLOY)
+name: CSQTT 2.5.0 - GNU diagnostic build (NO DEPLOY)
 
 on:
   workflow_dispatch:
@@ -12,24 +12,22 @@ jobs:
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: "2"
+      CARGO_NET_RETRY: "3"
       RUST_TOOLCHAIN: "1.97.1"
-      RUST_TARGET: "x86_64-unknown-linux-musl"
+      RUST_TARGET: "x86_64-unknown-linux-gnu"
     steps:
-      - name: Checkout exact staging source
+      - name: Checkout isolated CSQTT 2.5.0 source
         uses: https://code.forgejo.org/actions/checkout@v4
 
-      - name: Prepare Rust and native Linux build dependencies
+      - name: Prepare native GNU build toolchain (no Zig)
         shell: bash
         run: |
           set -euo pipefail
-          echo "=== Job container identity ==="
+          echo "=== Runner environment ==="
           id
-          cat /etc/os-release || true
+          cat /etc/os-release
           uname -m
-          if [[ "$(uname -m)" != "x86_64" ]]; then
-            echo "This staging workflow currently requires x86_64 runner architecture" >&2
-            exit 2
-          fi
+          test "$(uname -m)" = "x86_64"
 
           if command -v apt-get >/dev/null 2>&1; then
             if [[ "$(id -u)" == "0" ]]; then
@@ -37,58 +35,37 @@ jobs:
             elif command -v sudo >/dev/null 2>&1; then
               APT=(sudo)
             else
-              echo "Need root/sudo inside the job container to install build dependencies" >&2
+              echo "Job needs root/sudo to install compiler dependencies" >&2
               exit 2
             fi
             "${APT[@]}" apt-get update
             DEBIAN_FRONTEND=noninteractive "${APT[@]}" apt-get install -y --no-install-recommends \
-              ca-certificates curl git file build-essential musl-tools cmake pkg-config perl xz-utils
+              ca-certificates curl git file build-essential cmake pkg-config perl
           else
-            echo "Non-apt container; checking for preinstalled build dependencies"
-            for cmd in curl git file cc musl-gcc cmake pkg-config perl; do
-              command -v "$cmd" >/dev/null 2>&1 || {
-                echo "Missing $cmd; provide a Debian/Ubuntu build image or preinstall dependencies" >&2
-                exit 2
-              }
+            for tool in curl git file cc c++ cmake pkg-config perl; do
+              command -v "$tool" >/dev/null || exit 2
             done
           fi
 
           if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -fsSL \
+            curl --fail --location --connect-timeout 15 --max-time 120 \
               https://sh.rustup.rs -o /tmp/vpnsl-rustup-init.sh
-            sh /tmp/vpnsl-rustup-init.sh -y \
-              --profile minimal --default-toolchain none --no-modify-path
+            sh /tmp/vpnsl-rustup-init.sh -y --profile minimal \
+              --default-toolchain none --no-modify-path
           fi
-
           export PATH="$HOME/.cargo/bin:$PATH"
-          command -v rustup
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal \
-            --component rustfmt --component clippy --target "$RUST_TARGET"
+            --target "$RUST_TARGET"
           rustup default "$RUST_TOOLCHAIN"
           rustc --version
           cargo --version
-          musl-gcc --version | head -n 1
-
-          echo "=== Install pinned Zig 0.14.1 (C and C++ compiler for MUSL) ==="
-          zig_archive="/tmp/vpnsl-zig-x86_64-linux-0.14.1.tar.xz"
-          zig_dir="$HOME/.local/zig/0.14.1"
-          curl --fail --location --retry 3 --connect-timeout 20 \
-            --output "$zig_archive" \
-            https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz
-          printf '%s  %s\n' \
-            '24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c' \
-            "$zig_archive" | sha256sum --check --status
-          mkdir -p "$zig_dir"
-          tar -xJf "$zig_archive" -C "$zig_dir" --strip-components=1
-          ln -sfn "$zig_dir/zig" "$HOME/.cargo/bin/zig"
-          zig version
-          test "$(zig version)" = "0.14.1"
-
+          cc --version | head -n 1
+          c++ --version | head -n 1
           if [[ -n "${GITHUB_PATH:-}" ]]; then
             printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           fi
 
-      - name: Print provenance and check toolchain
+      - name: Verify source provenance and toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -98,32 +75,30 @@ jobs:
           cargo --version
           git --version
           rustup target list --installed
-          zig version
           test "$(rustc --version | awk '{print $2}')" = "$RUST_TOOLCHAIN"
-          test "$(zig version)" = "0.14.1"
-          test -x "$HOME/.cargo/bin/zig"
+          test "$RUST_TARGET" = "x86_64-unknown-linux-gnu"
 
-      - name: Verify upstream blobs, test and build server (no installation)
+      - name: Verify, test and build CSQTT server - GNU diagnostic only
         shell: bash
         run: |
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
           mkdir -p staging-artifacts
           git rev-parse HEAD > staging-artifacts/SOURCE_COMMIT.txt
-          printf '%s\n' 'STAGING ONLY. PROTOCOL COMPATIBILITY WITH VPNSL 1.0.10/1.0.3 NOT VERIFIED.' > staging-artifacts/NOT_FOR_PRODUCTION.txt
+          printf '%s\n' 'LAB ONLY: glibc-linked GNU diagnostic binary. Not a MUSL release. VPNSL Android/Windows compatibility NOT VERIFIED. DO NOT DEPLOY.' > staging-artifacts/NOT_FOR_PRODUCTION.txt
           bash server-updates/csqtt-2.5.0/check-source.sh 2>&1 | tee staging-artifacts/build.log
           binary="server-updates/csqtt-2.5.0/rust-server/target/$RUST_TARGET/release/csqtt"
           test -s "$binary"
-          cp "$binary" staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING
-          chmod 0755 staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING
-          file staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING
-          sha256sum staging-artifacts/csqtt-2.5.0-linux-amd64-musl-STAGING > staging-artifacts/SHA256SUMS.txt
+          cp "$binary" staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING
+          chmod 0755 staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING
+          file staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING
+          sha256sum staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING > staging-artifacts/SHA256SUMS.txt
 
-      - name: Archive diagnostics and staging server binary
+      - name: Archive diagnostics and staging binary
         if: always()
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: csqtt-2.5.0-staging-check
+          name: csqtt-2.5.0-gnu-diagnostic
           path: staging-artifacts/
           if-no-files-found: warn
           retention-days: 14
