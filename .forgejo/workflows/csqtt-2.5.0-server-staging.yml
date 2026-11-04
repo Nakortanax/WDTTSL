@@ -1,0 +1,104 @@
+name: CSQTT 2.5.0 - GNU diagnostic build (NO DEPLOY)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/csqtt-2.5.0-server-staging-20261104
+
+jobs:
+  server-staging:
+    runs-on: linux-build
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_NET_RETRY: "3"
+      RUST_TOOLCHAIN: "1.97.1"
+      RUST_TARGET: "x86_64-unknown-linux-gnu"
+    steps:
+      - name: Checkout isolated CSQTT 2.5.0 source
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Prepare native GNU build toolchain (no Zig)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Runner environment ==="
+          id
+          cat /etc/os-release
+          uname -m
+          test "$(uname -m)" = "x86_64"
+
+          if command -v apt-get >/dev/null 2>&1; then
+            if [[ "$(id -u)" == "0" ]]; then
+              APT=()
+            elif command -v sudo >/dev/null 2>&1; then
+              APT=(sudo)
+            else
+              echo "Job needs root/sudo to install compiler dependencies" >&2
+              exit 2
+            fi
+            "${APT[@]}" apt-get update
+            DEBIAN_FRONTEND=noninteractive "${APT[@]}" apt-get install -y --no-install-recommends \
+              ca-certificates curl git file build-essential cmake pkg-config perl
+          else
+            for tool in curl git file cc c++ cmake pkg-config perl; do
+              command -v "$tool" >/dev/null || exit 2
+            done
+          fi
+
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --fail --location --connect-timeout 15 --max-time 120 \
+              https://sh.rustup.rs -o /tmp/vpnsl-rustup-init.sh
+            sh /tmp/vpnsl-rustup-init.sh -y --profile minimal \
+              --default-toolchain none --no-modify-path
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal \
+            --target "$RUST_TARGET"
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+          cc --version | head -n 1
+          c++ --version | head -n 1
+          if [[ -n "${GITHUB_PATH:-}" ]]; then
+            printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Verify source provenance and toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          git rev-parse HEAD
+          rustc --version
+          cargo --version
+          git --version
+          rustup target list --installed
+          test "$(rustc --version | awk '{print $2}')" = "$RUST_TOOLCHAIN"
+          test "$RUST_TARGET" = "x86_64-unknown-linux-gnu"
+
+      - name: Verify, test and build CSQTT server - GNU diagnostic only
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p staging-artifacts
+          git rev-parse HEAD > staging-artifacts/SOURCE_COMMIT.txt
+          printf '%s\n' 'LAB ONLY: glibc-linked GNU diagnostic binary. Not a MUSL release. VPNSL Android/Windows compatibility NOT VERIFIED. DO NOT DEPLOY.' > staging-artifacts/NOT_FOR_PRODUCTION.txt
+          bash server-updates/csqtt-2.5.0/check-source.sh 2>&1 | tee staging-artifacts/build.log
+          binary="server-updates/csqtt-2.5.0/rust-server/target/$RUST_TARGET/release/csqtt"
+          test -s "$binary"
+          cp "$binary" staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING
+          chmod 0755 staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING
+          file staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING
+          sha256sum staging-artifacts/csqtt-2.5.0-linux-amd64-gnu-STAGING > staging-artifacts/SHA256SUMS.txt
+
+      - name: Archive diagnostics and staging binary
+        if: always()
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: csqtt-2.5.0-gnu-diagnostic
+          path: staging-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
