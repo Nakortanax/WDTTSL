@@ -3198,6 +3198,7 @@ const PANEL_HTML: &str = r##"
             <label for="edit_csqttToggle">Использовать csqtt://</label>
             <div style="display: flex; align-items: center; gap: 12px;">
                 <button class="btn btn-ghost" id="edit_copyLinkBtn" onclick="executeCopyLink()" style="padding: 0 16px; display: flex; align-items: center; gap: 6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>Ссылка</button>
+                <button class="btn btn-primary" id="edit_downloadKvnBtn" onclick="downloadKvnProfile()" title="Скачать файл КВН для этого клиента">⬇ Скачать КВН</button>
                 <label class="switch">
                     <input type="checkbox" id="edit_csqttToggle" onchange="toggleEditWdttFields()">
                     <span class="slider"></span>
@@ -3802,6 +3803,73 @@ const PANEL_HTML: &str = r##"
             } finally { btn.textContent = 'Создать'; btn.disabled = false; }
         }
 
+        // KVN v1 profile: same JSON schema as Android KVN / Windows KvnProfiles.cs.
+        // All credentials are taken only from the existing authenticated client record.
+        function buildKvnPayload(client, endpoint) {
+            if (!client || typeof client !== 'object') throw new Error('Клиент не выбран');
+            const rawName = String(client.name || '').trim();
+            let name = rawName;
+            if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/.test(name)) {
+                const position = Math.max(0, (window.clientsData || []).indexOf(client));
+                name = 'CSQTT-' + String(position + 1);
+            }
+            const password = String(client.password || '');
+            if (!/^[A-Za-z0-9]{10,128}$/.test(password)) {
+                throw new Error('Недопустимый пароль клиента');
+            }
+            const hashes = String(client.vk_hashes || client.vk_hash || '')
+                .split(',').map(h => h.trim()).filter(Boolean);
+            if (hashes.length < 1 || hashes.length > 6 ||
+                hashes.some(h => !/^[A-Za-z0-9_=:/.+\-]{16,512}$/.test(h)) ||
+                new Set(hashes).size !== hashes.length) {
+                throw new Error('Для этого клиента нужны 1–6 корректных VK-хешей');
+            }
+            const match = String(endpoint || '').trim().match(/^(\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+):([0-9]{1,5})$/);
+            if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535) {
+                throw new Error('Адрес должен иметь вид host:port (например vpn.example.com:46000)');
+            }
+            return {format:'kvn-csqtt', version:1, name, endpoint:match[0],
+                    vk_hashes:hashes, password};
+        }
+
+        function downloadKvnProfile() {
+            try {
+                if (!activeClient) throw new Error('Выберите клиента');
+                const defaultEndpoint = localStorage.getItem('kvn-csqtt-endpoint') ||
+                    (location.hostname.includes(':') ? '['+location.hostname+']' : location.hostname) +
+                    ':' + (activeClient.dtls_port || 46000);
+                const supplied = prompt('Адрес CSQTT для файла КВН (сервер:порт):',defaultEndpoint);
+                if (supplied === null) return;
+                let exportClient = activeClient;
+                if (!String(exportClient.vk_hashes || exportClient.vk_hash || '').trim()) {
+                    const enteredHashes = prompt(
+                        'У старого клиента нет сохранённых VK-хешей. Укажите действующие VK-хеши через запятую для файла КВН:',
+                        ''
+                    );
+                    if (enteredHashes === null) return;
+                    exportClient = Object.assign({}, activeClient, {vk_hashes:enteredHashes});
+                }
+                const payload = buildKvnPayload(exportClient, supplied);
+                localStorage.setItem('kvn-csqtt-endpoint', payload.endpoint);
+                const bytes = new TextEncoder().encode(JSON.stringify(payload) + '\n');
+                const blob = new Blob([bytes], {type:'application/json;charset=utf-8'});
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                try {
+                    link.href = url;
+                    link.download = payload.name.replace(/[^A-Za-z0-9_-]/g,'_') + '.kvn';
+                    document.body.appendChild(link);
+                    link.click();
+                    showToast('Файл КВН сохранён. Он содержит пароль — передавайте безопасно.');
+                } finally {
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }
+            } catch (error) {
+                showToast(String(error.message || error), 'error');
+            }
+        }
+
         function buildCsqttLink(password, peerPort, rawHashes) {
             let url = "csqtt://connect?v=2&host=" + encodeURIComponent(location.hostname) +
                 "&peer=" + encodeURIComponent(peerPort) +
@@ -3861,6 +3929,7 @@ const PANEL_HTML: &str = r##"
             
             document.getElementById('edit_unbindBtn').style.display = (!c.device_id) ? 'none' : 'inline-block';
             document.getElementById('edit_copyLinkBtn').style.display = hasWdtt ? 'inline-block' : 'none';
+            document.getElementById('edit_downloadKvnBtn').style.display = isMain ? 'none' : 'inline-flex';
             document.getElementById('edit_deleteBtn').style.display = isMain ? 'none' : 'inline-block';
             document.getElementById('edit_saveBtn').style.display = isMain ? 'none' : 'inline-block';
             
@@ -3874,6 +3943,7 @@ const PANEL_HTML: &str = r##"
             toggleEditVkHashFields();
             if (activeClient) {
                 document.getElementById('edit_copyLinkBtn').style.display = toggle ? 'inline-block' : 'none';
+                document.getElementById('edit_downloadKvnBtn').style.display = activeClient.name === 'Главный пароль' ? 'none' : 'inline-flex';
             }
         }
 
